@@ -1,0 +1,11 @@
+Package: raffalib
+Version: 0.1
+Date: 2023-12-17
+Title: My Custome Utils
+Description: Custom functions used regularly by me.
+Author: Raffaele Mancuso <raffaele.mancuso4@unibo.it>
+Maintainer: Raffaele Mancuso <raffaele.mancuso4@unibo.it>
+License: GPL-3
+Imports: R.utils
+RoxygenNote: 7.3.3
+Encoding: UTF-8
