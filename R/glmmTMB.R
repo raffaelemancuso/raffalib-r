@@ -108,18 +108,26 @@ glmmTMB_optmix_control_lbfgsb <- glmmTMB::glmmTMBControl(
 
 # --- CALIBRAR --- #
 
-glmmTMB_calibrar_optim <- function(control, ...) {
+# Function to pass to the `optimizer` argument of glmmTMB::glmmTMBControl
+glmmTMB_calibrar_optim <- function(par, fn, gr = NULL, ..., control = list()) {
   print("calibrar optimization")
-  if(!is.null(control$ncores)) {
+  if (!is.null(control$ncores)) {
     cl <- parallel::makeCluster(control$ncores)
   }
-  ret <- calibrar::optim2(..., control=control, parallel=TRUE)
-  if(!is.null(control$ncores)) {
+  ret <- calibrar::optim2(
+    par = par,
+    fn = fn,
+    gr = gr,
+    ...,
+    control = control,
+    parallel = TRUE
+  )
+  if (!is.null(control$ncores)) {
     parallel::stopCluster(cl) # close the parallel connections
   }
   # debug
   # convergence: An integer code. 0 indicates successful completion.
-  convergence = ret$convergence==0
+  convergence = ret$convergence == 0
   print(paste0("calibrar convergence: ", convergence))
   print(paste0("calibrar message: ", ret$message))
   # glmmTMB automatically handles output from optim(), by renaming the value component to objective
@@ -128,13 +136,14 @@ glmmTMB_calibrar_optim <- function(control, ...) {
   return(ret)
 }
 
-glmmTMB_calibrar_control <- function(..., method=NULL) {
-  if(is.null(method)) {
+# Function to pass to the `control` argument of glmmTMB::glmmTMB
+glmmTMB_calibrar_control <- function(..., method = NULL) {
+  if (is.null(method)) {
     stop("Please specify a method for calibrar optimization.")
   }
   ncores <- parallel::detectCores() - 1
   res <- glmmTMB::glmmTMBControl(
-    parallel = ncores,
+    parallel = list(n=ncores, autopar=TRUE),
     optimizer = glmmTMB_calibrar_optim,
     optArgs = list(method = method),
     optCtrl = list(ncores = ncores),

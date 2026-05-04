@@ -20,6 +20,21 @@ paper_sizes <- list(
   "letter" = c(215.9, 279.4)
 )
 
+inch2mm <- function(s) {
+  return(s*25.4)
+}
+
+compute_max_size <- function(doc_gg) {
+  word_size <- officer::docx_dim(doc_gg)
+  width <- word_size$page['width'] - word_size$margins['left'] - word_size$margins['right']
+  height <- word_size$page['height'] - word_size$margins['top'] - word_size$margins['bottom']
+  width <- inch2mm(width)
+  height <- inch2mm(height)
+  width <- width * 0.9
+  height <- height * 0.9
+  return(list(width=width, height=height))
+}
+
 #' Define Word document properties
 #'
 #' @export
@@ -45,37 +60,40 @@ word_prop <- function(
 
 
 #' Prepare docx for export
-prepare_docx <- function(word_prop) {
+prepare_docx <- function(myword_prop) {
+  
   # Define section properties
+  #
   # A section is a grouping of blocks (ie. paragraphs and tables)
   # that have a set of properties that define pages on which the text will appear.
   # A Section properties object stores information about page composition, such as page size, page orientation, borders and margins.
-  paper_format <- word_prop[["paper_format"]]
+  paper_format <- myword_prop[["paper_format"]]
   paper_size <- paper_sizes[[paper_format]]
   page_size <- officer::page_size(
     width = paper_size[1],
     height = paper_size[2],
-    orient = ifelse(word_prop[["page_landscape"]], "landscape", "portrait"),
+    orient = ifelse(myword_prop[["page_landscape"]], "landscape", "portrait"),
     unit = "mm"
   )
-  # Unit of measurement of page margins is inch and apparently can't be changed
+  
+  # Unit of measurement of page margins is inches and apparently can't be changed
   page_margins <- officer::page_mar(bottom = 1, top = 1, right = 1, left = 1)
   section_prop <- officer::prop_section(
     page_size = page_size,
     page_margins = page_margins
   )
 
-  # Create caption
+  # Define caption formatting
   # fp_text: Create an fp_text object that describes text Formatting Properties.
   # See: https://stackoverflow.com/a/62044378/1719931
   caption_formatting <- officer::fp_text(
     color = "black",
-    font.size = word_prop[["caption_font_size"]],
-    bold = word_prop[["caption_bold"]],
-    italic = word_prop[["caption_italic"]],
+    font.size = myword_prop[["caption_font_size"]],
+    bold = myword_prop[["caption_bold"]],
+    italic = myword_prop[["caption_italic"]],
     underlined = FALSE,
     strike = FALSE,
-    font.family = word_prop[["caption_font_family"]],
+    font.family = myword_prop[["caption_font_family"]],
     cs.family = NULL,
     eastasia.family = NULL,
     hansi.family = NULL,
@@ -85,19 +103,22 @@ prepare_docx <- function(word_prop) {
 
   # Create caption paragraph
   caption_fpar <- officer::fpar(officer::ftext(
-    word_prop[["caption_text"]],
+    myword_prop[["caption_text"]],
     prop = caption_formatting
   ))
 
   # Create document
-  docx <- officer::read_docx() %>%
-    officer::body_add_fpar(caption_fpar)
+  docx <- officer::read_docx() 
+  
+  # Add caption
+  docx <- docx %>% officer::body_add_fpar(caption_fpar)
 
   # Return
   outs <- list(
     docx = docx,
     section_prop = section_prop,
-    page_size = page_size
+    paper_width = paper_size[1],
+    paper_height = paper_size[2]
   )
 
   return(outs)
@@ -105,7 +126,8 @@ prepare_docx <- function(word_prop) {
 
 #' Save docx file
 finalize_docx <- function(outs, outfp) {
-  # For the necessity to define the same default section than the one you want to end the document so that Word agree to not add a page
+  # It's necessary to define the same default section than the one you want to end the document 
+  # so that Word agree to not add a page
   # See: https://stackoverflow.com/a/75451251/1719931
   outs[["docx"]] %>%
     officer::body_end_block_section(
@@ -125,9 +147,9 @@ tmap2docx <- function(
   plot_width = NULL,
   plot_height = NULL,
   plot_unit = "mm",
-  word_prop = word_prop()
+  myword_prop = word_prop()
 ) {
-  outs <- prepare_docx(word_prop)
+  outs <- prepare_docx(myword_prop)
 
   if (
     (is.null(plot_width) & !is.null(plot_height)) |
@@ -139,9 +161,10 @@ tmap2docx <- function(
   }
 
   if (is.null(plot_width)) {
-    plot_width <- outs[["page_size"]]$width * 0.7
-    plot_height <- outs[["page_size"]]$height * 0.7
-    plot_unit <- "mm"
+    sizes <- compute_max_size(outs[["docx"]])
+    plot_width <- sizes[["width"]]
+    plot_height <- sizes[["height"]]
+    print(paste0("Guessed plot size: ", plot_width, " x ", plot_height, " mm"))
   }
 
   outs[["docx"]] <- outs[["docx"]] %>%
@@ -167,7 +190,7 @@ plot2docx <- function(
   plot_height = 127,
   plot_unit = "mm",
   plot_res = 300,
-  word_prop = word_prop()
+  myword_prop = word_prop()
 ) {
   # Check inputs
   if (
@@ -180,12 +203,14 @@ plot2docx <- function(
   }
 
   if (is.null(plot_width)) {
-    plot_width <- outs[["page_size"]]$width * 0.7
-    plot_height <- outs[["page_size"]]$height * 0.7
+    sizes <- compute_max_size(outs[["docx"]])
+    plot_width <- sizes[["width"]]
+    plot_height <- sizes[["height"]]
+    print(paste0("Guessed plot size: ", plot_width, " x ", plot_height, " mm"))
   }
 
   # Initialize Word document
-  outs <- prepare_docx(word_prop)
+  outs <- prepare_docx(myword_prop)
 
   # Add plot to docx
   outs[["docx"]] <- outs[["docx"]] %>%
@@ -212,7 +237,7 @@ ggplot2docx <- function(
   plot_width = NULL,
   plot_height = NULL,
   plot_unit = "mm",
-  word_prop = word_prop()
+  myword_prop = word_prop()
 ) {
   # Check inputs
   if (
@@ -224,20 +249,23 @@ ggplot2docx <- function(
     )
   }
 
-  if (is.null(plot_width)) {
-    plot_width <- outs[["page_size"]]$width * 0.7
-    plot_height <- outs[["page_size"]]$height * 0.7
-    plot_unit <- "mm"
-  }
-
   # Prepare docx
-  outs <- prepare_docx(word_prop)
+  outs <- prepare_docx(myword_prop)
+  
+  # Guess plot size if not specified
+  if (is.null(plot_width)) {
+    sizes <- compute_max_size(outs[["docx"]])
+    plot_width <- sizes[["width"]]
+    plot_height <- sizes[["height"]]
+    print(paste0("Guessed plot size: ", plot_width, " x ", plot_height, " mm"))
+  }
 
   # Add plot to docx
   outs[["docx"]] <- outs[["docx"]] %>%
     officer::body_add_gg(
       value = gg,
       style = plot_style,
+      # width and height are expressed in inches
       width = plot_width,
       height = plot_height,
       unit = plot_unit
@@ -260,10 +288,10 @@ flextable2docx <- function(
   padding = NULL,
   column_width = NULL,
   layout_autofit = TRUE,
-  word_prop = word_prop()
+  myword_prop = word_prop()
 ) {
   # Prepare docx
-  outs <- prepare_docx(word_prop = word_prop)
+  outs <- prepare_docx(myword_prop)
 
   # Define table layout
   layout <- ifelse(layout_autofit, "autofit", "fixed")

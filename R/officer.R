@@ -18,33 +18,52 @@
 # Posted by stefan
 # Retrieved 2026-01-10, License - CC BY-SA 4.0
 #' @export
-body_add_tmap <- function(x,
-                          value,
-                          width = 6,
-                          height = 5,
-                          res = 300,
-                          style = "Normal",
-                          scale = 1,
-                          pos = "after",
-                          unit = "in",
-                          ...) {
+body_add_tmap <- function(
+  x,
+  value,
+  width = 6,
+  height = 5,
+  res = 300,
+  style = "Normal",
+  scale = 1,
+  pos = "after",
+  unit = "in",
+  ...
+) {
   stopifnot(inherits(value, "tmap"))
   args <- sys.call()
   if ("units" %in% names(args[-1])) {
-    cli::cli_abort(c("Found a {.arg units} argument. Did you mean {.arg unit}?"))
+    cli::cli_abort(c(
+      "Found a {.arg units} argument. Did you mean {.arg unit}?"
+    ))
   }
   unit <- officer:::check_unit(unit, c("in", "cm", "mm"))
   file <- tempfile(fileext = ".png")
   ragg::agg_png(
-    filename = file, width = width, height = height,
-    scaling = scale, units = unit, res = res, background = "transparent",
+    filename = file,
+    width = width,
+    height = height,
+    scaling = scale,
+    units = unit,
+    res = res,
+    background = "transparent",
     ...
   )
   print(value)
   dev.off()
+  # Remove temporary file after use
   on.exit(unlink(file))
-  officer::body_add_img(x,
-                        src = file, style = style, width = width,
-                        height = height, pos = pos, unit = unit
+  # Crop white margins around image
+  # WARNING: This will distort the aspect ratio
+  #system2(command = "mogrify", args = c("-trim", file))
+  # Add image to Word document
+  officer::body_add_img(
+    x,
+    src = file,
+    style = style,
+    width = width,
+    height = height,
+    pos = pos,
+    unit = unit
   )
 }

@@ -15,6 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #' Create and save a correlation table as a Word document
+#' Variables are substituted with numbers, with a numbered legend in the footer
+#' 
 #' @param df A data frame containing the data
 #' @return A flextable object with the correlation table
 #' @import dplyr
