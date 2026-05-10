@@ -14,6 +14,20 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#' Find variables that a missing in a coefficient map 
+#' (to pass to `coef_map` argument of `modelsummary()`) 
+#' but are present in the model estimates
+#'
+#' @param mod The models
+#' @param coef_map The coefficient map
+#' @return A set of missing variables
+#' @export
+modelsummary_missing_variables_in_coef_map <- function(mod, coef_map) {
+  ests_all <- modelsummary::get_estimates(mod)[["term"]]
+  ests_ours <- names(coef_map)
+  setdiff(ests_all, ests_ours)
+}
+
 #' Re-order coefficients so that, when printing more than one model, variables in common to all models are printed last
 #'
 #' @param mods A list of models
@@ -45,7 +59,7 @@ modelsummary_common_coefs_at_bottom <- function(mods, coef_rename=TRUE, include_
   coefs_order <- c(coefs_order, coefs_common)
   # Put intercept at the bottom
   if("(Intercept)" %in% coefs_order) {
-    coefs_order <- coefs_order %>% extract(. != "(Intercept)")
+    coefs_order <- coefs_order[coefs_order != "(Intercept)"]
     coefs_order <- c(coefs_order, "(Intercept)")
   }
   # Return
@@ -106,5 +120,6 @@ modelsummary_build_labelled_coef_map <- function(df, debug=FALSE) {
       }
     }
   }
+  # Return
   return(coefmap)
 }

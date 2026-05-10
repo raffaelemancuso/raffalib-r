@@ -14,9 +14,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# Source - https://stackoverflow.com/a/79930130
-# Posted by PBulls
-# Retrieved 2026-04-22, License - CC BY-SA 4.0
+#' Add significance starts to a gtsummary table with a custome formatter for stars
+#' 
+#' Source - https://stackoverflow.com/a/79930130
+#' Posted by PBulls
+#' Retrieved 2026-04-22, License - CC BY-SA 4.0
 #' @export
 gtsummary_add_significance_stars <- function(
   x,
@@ -64,7 +66,7 @@ gtsummary_add_significance_stars <- function(
   pattern_cols <- gtsummary:::.extract_glue_elements(pattern)
   if (rlang::is_empty(pattern_cols)) {
     cli::cli_abort(
-      "The {.arg pattern} argumnet must be a string using glue syntax to select columns.",
+      "The {.arg pattern} argument must be a string using glue syntax to select columns.",
       call = gtsummary:::get_cli_abort_call()
     )
   }
@@ -150,7 +152,7 @@ gtsummary_format_statistic_column <- function(table, digits = 6) {
       stringr::str_trim()
   }
   # Use modify_fmt_fun(colname = <fmt fun>) to update a single column.
-  return(modify_fmt_fun(table, statistic = fmt_fnc))
+  return(gtsummary::modify_fmt_fun(table, statistic = fmt_fnc))
 }
 
 #' Compute a column with the differences between the means across two groups in a gtsummary table
@@ -161,25 +163,17 @@ gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
   
   x <- data[[variable]]
   g <- data[[by]]
-  vartype <- class(x)[1]
   
-  # <UNCOMMENT THIS TO MAKE IT WORK>
-  if(
-    (vartype=="character" | vartype=="numeric" | vartype=="integer") &
-    length(unique(x)) <= 10
-  ) 
-  {
-    vartype <- "fake_factor"
-  }
+  # Query the type that gtsummary actually assigned via tbl$table_body$var_type
+  # See: https://stackoverflow.com/a/79935992/1719931
+  var_type <- tbl$table_body |>
+    filter(variable == !!variable) |>
+    pull(var_type) |>
+    first()
 
   switch(
-    vartype,
-    fake_factor = {
-      prop <- table(x, g)
-      d <- prop[, 2] - prop[, 1]
-      return(d)
-    },
-    factor = {
+    var_type,
+    categorical = {
       prop <- table(x, g)
       # margin=1 -> proportions by rows (the sum of a row equals 1)
       # margin=2 -> proportions by columns (the sum of a column equals 1)
@@ -187,20 +181,17 @@ gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
       d <- prop[, 2] - prop[, 1]
       return(d * 100)
     },
-    numeric = {
+    continuous = {
       return(diff(tapply(x, g, mean, na.rm = TRUE)))
     },
-    integer = {
-      return(diff(tapply(x, g, mean, na.rm = TRUE)))
-    },
-    logical = {
+    dichotomous = {
       prop <- prop.table(table(x, g), margin = 2)
       d <- prop[, 2] - prop[, 1]
       diffs <- d * 100
       return(diffs["TRUE"])
     },
     {
-      stop(glue("ERROR: Unrecognized type {vartype}"))
+      stop(paste0("ERROR: Unrecognized type ", var_type))
     }
   )
 }
@@ -221,7 +212,7 @@ gtsummary_add_mean_diff <- function(table) {
     )
   ) %>%
     gtsummary::modify_header(add_stat_1 = "**Δ / Δ%**") %>% 
-    gtsummary::modify_fmt_fun(add_stat_1 = label_style_sigfig())
+    gtsummary::modify_fmt_fun(add_stat_1 = gtsummary::label_style_sigfig())
 
   return(x)
 }

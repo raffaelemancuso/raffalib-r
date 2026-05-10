@@ -1,11 +1,35 @@
 Package: raffalib
 Version: 0.1
-Date: 2023-12-17
-Title: My Custome Utils
+Date: 2026-05-10
+Title: My Custom Utils
 Description: Custom functions used regularly by me.
 Author: Raffaele Mancuso <raffaele.mancuso4@unibo.it>
 Maintainer: Raffaele Mancuso <raffaele.mancuso4@unibo.it>
 License: GPL-3
-Imports: R.utils
+Imports:
+    R.utils,
+    calibrar,
+    cli,
+    correlation,
+    DescTools,
+    dplyr,
+    flextable,
+    glmmTMB,
+    gtools,
+    gtsummary,
+    labelled,
+    magrittr,
+    modelsummary,
+    numDeriv,
+    officer,
+    optimx,
+    parallel,
+    plyr,
+    ragg,
+    reformulas,
+    rlang,
+    stringr,
+    tidyselect,
+    varhandle
 RoxygenNote: 7.3.3
 Encoding: UTF-8

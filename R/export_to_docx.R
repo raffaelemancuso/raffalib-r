@@ -75,7 +75,6 @@ prepare_docx <- function(myword_prop) {
     orient = ifelse(myword_prop[["page_landscape"]], "landscape", "portrait"),
     unit = "mm"
   )
-  
   # Unit of measurement of page margins is inches and apparently can't be changed
   page_margins <- officer::page_mar(bottom = 1, top = 1, right = 1, left = 1)
   section_prop <- officer::prop_section(
@@ -84,6 +83,7 @@ prepare_docx <- function(myword_prop) {
   )
 
   # Define caption formatting
+  #
   # fp_text: Create an fp_text object that describes text Formatting Properties.
   # See: https://stackoverflow.com/a/62044378/1719931
   caption_formatting <- officer::fp_text(
