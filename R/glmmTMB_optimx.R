@@ -45,5 +45,5 @@ glmmTMB_optmix_control_ncg <- glmmTMB::glmmTMBControl(
 glmmTMB_optmix_control_lbfgsb <- glmmTMB::glmmTMBControl(
   parallel = parallel::detectCores() - 2,
   optimizer = glmmTMB_optmix_optim,
-  optArgs = list(method = “L-BFGS-B”)
+  optArgs = list(method = "L-BFGS-B")
 )

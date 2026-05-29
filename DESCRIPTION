@@ -31,5 +31,5 @@ Imports:
     stringr,
     tidyselect,
     varhandle
-RoxygenNote: 7.3.3
 Encoding: UTF-8
+Config/roxygen2/version: 8.0.0

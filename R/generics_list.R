@@ -32,7 +32,7 @@
 #' list.rename(l1, l3, .strict=FALSE)
 #' list.rename(l1, l3, .strict=TRUE)
 #' @export
-list.rename <- function(l, o, .strict = TRUE) {
+list.rename.names <- function(l, o, .strict = TRUE) {
   if (.strict) {
     check <- names(l) %in% names(o)
     stopifnot(all(check))
@@ -44,6 +44,18 @@ list.rename <- function(l, o, .strict = TRUE) {
   }
   names(l) <- as.character(new_names)
   return(l)
+}
+
+#' @export
+list.rename.values <- function(from, to) {
+  for (i in seq_along(from)) {
+    var <- from[[i]]
+    label <- to[[var]]
+    if (!is.null(label)) {
+      from[[i]] <- label
+    }
+  }
+  return(from)
 }
 
 #' Sort a named list by names

@@ -16,21 +16,12 @@
 
 # --- DATA WRANGLING --- #
 
+#' Standardize variable
+#' The built-in function returns a matrix, this returns a vector
+#' 
 #' @export
 myscale <- function(var) {
   scale(var)[, 1]
-}
-
-#' Unfactor a variable if it's a factor variable, otherwise return the variable as is
-#' 
-#' @param var The variable to unfactor
-#' @return The unfactored variable
-#' @export
-myunfactor <- function(var) {
-  if(class(var) == "factor") {
-    return(varhandle::unfactor(var))
-  }
-  return(var)
 }
 
 #' Winsorize a variable
@@ -38,14 +29,27 @@ myunfactor <- function(var) {
 #' @param x The vector to winsorize
 #' @param q1 Quartile for lowest values
 #' @param q2 Quartile for highest values
-#' @param na.rm Whether to remove NAs
+#' @importFrom DescTools Winsorize
 #'
 #' @return The winsorized vector
 #'
 #' @export
-winsorize <- function(x, q1 = 0.05, q2 = 0.95, na.rm = FALSE) {
-  return(DescTools::Winsorize(
+winsorize <- function(x, q1 = 0.05, q2 = 0.95) {
+  return(Winsorize(
     x,
-    val = quantile(x, probs = c(q1, q2), na.rm = na.rm)
+    val = quantile(x, probs = c(q1, q2), na.rm = TRUE)
   ))
+}
+
+#' Convert NaNs to NAs
+#'
+#' @param df The dataset
+#' @importFrom dplyr mutate
+#' @importFrom dplyr where
+#' @importFrom dplyr across
+#' @importFrom dplyr na_if
+#' @export
+nan2na <- function(df) {
+  # class(NaN) -> "numeric"
+  df %>% mutate(across(where(is.numeric), ~na_if(., NaN)))
 }

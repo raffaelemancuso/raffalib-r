@@ -43,11 +43,21 @@ sort_columns_by_name <- function(df) {
   return(df)
 }
 
-#' Print the columns of a dataframe (eventually, only the ones that match a given regular expression) in sorted order
+#' Print the columns of a dataframe matching a given regular expression in natural sorted order
 #' 
 #' @param df The dataset to print the columns of
 #' @param regex A regular expression to filter the columns to print
 #' @param sort Whether to sort the columns alphabetically
+#' @return A character vector of column names matching the regular expression, printed to the console
+#' 
+#' @examples
+#' # Print all columns containing "length" in their name, sorted alphabetically
+#' catcols(mtcars, regex="length", sort=TRUE)
+#' # Print all columns containing "length" in their name, in original order
+#' catcols(mtcars, regex="length", sort=FALSE)
+#' 
+#' @importFrom stringr str_subset
+#' @importFrom gtools mixedsort
 #' @export
 catcols <- function(df, regex=NULL, sort=TRUE) {
   cols <- colnames(df)
@@ -55,7 +65,7 @@ catcols <- function(df, regex=NULL, sort=TRUE) {
     cols <- cols %>% str_subset(regex)
   }
   if(sort) {
-    cols <- cols %>% gtools::mixedsort()
+    cols <- cols %>% mixedsort()
   }
   cols %>% paste0(collapse="\n") %>% cat()
 }

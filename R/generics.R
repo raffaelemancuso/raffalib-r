@@ -19,7 +19,6 @@
 #' It will return a character string representing the name of the method that would be dispatched by the input generic given that generic and its arguments.
 #' See: https://stackoverflow.com/a/42742370/1719931
 #'
-#'
 #' @export 
 #' @examples
 #' findMethod(as.ts, iris)
@@ -46,33 +45,32 @@ save_backup <- function(obj, out_dir, file_stem) {
   saveRDS(obj, fp)
 }
 
-# --- WORKAROUNDS --- #
-
-#' Print what are the character variables in a data frame
-#' Used to debug issues due to https://github.com/easystats/parameters/issues/1142
-#'
+#' Generate batches of indices for a given total size and batch size.
+#' This function creates a list of batches, where each batch is a list containing the batch number, start index, and end index.
+#' For example, if total_size is 10 and batch_size is 3, the function will return a list of batches:
+#' - Batch 1: start index 1, end index 3
+#' - Batch 2: start index 4, end index 6
+#' - Batch 3: start index 7, end index 9
+#' - Batch 4: start index 10, end index 10
+#' This function is useful for processing data in chunks, especially when dealing with large datasets that cannot be loaded into memory all at once.
+#' @param total_size The total number of items to be processed.
+#' @param batch_size The number of items to be processed in each batch.
+#' @return A list of batches, where each batch is a list containing the batch number, start index, and end index.
+#' @examples
+#' gen_batches(10, 3)
+#' gen_batches(25, 4)
+#' gen_batches(100, 20)
+#' gen_batches(7, 2)
+#' gen_batches(15, 5)
 #' @export
-print_char_vars <- function(df) {
-  for (col in colnames(df)) {
-    cl <- class(df[[col]])
-    if (cl == "character") {
-      print(col)
-    }
-  }
+gen_batches <- function(total_size, batch_size) {
+  batch_starts <- seq(1, total_size, by = batch_size)
+  batch_ends <- pmin(batch_starts + batch_size - 1, total_size)
+  batch_number <- seq_along(batch_starts)
+  # zip vectors
+  batches <- mapply(function(start, end, num) {
+    list(batch_number = num, batch_start = start, batch_end = end)
+  }, batch_starts, batch_ends, batch_number, SIMPLIFY = FALSE)
+  return(batches)
 }
 
-#' Convert character variables to factor
-#' Works around https://github.com/easystats/parameters/issues/1142
-#'
-#' @export
-char2factor <- function(df) {
-  for (col in colnames(df)) {
-    cl <- class(df[[col]])
-    print(paste0(col, "-> ", cl))
-    if (length(cl) == 1 & cl == "character") {
-      print(paste0("Converting ", col, " from character to factor"))
-      df[[col]] %<>% as.factor()
-    }
-  }
-  return(df)
-}

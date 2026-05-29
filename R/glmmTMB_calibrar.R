@@ -6,6 +6,8 @@ glmmTMB_calibrar_optimizer <- function(par, fn, gr = NULL, ..., control = list()
   if (!is.null(control$ncores)) {
     cl <- parallel::makeCluster(control$ncores)
   }
+  print("[glmmTMB_calibrar_optimizer] control:")
+  print(control)
   ret <- calibrar::optim2(
     par = par,
     fn = fn,
@@ -29,16 +31,36 @@ glmmTMB_calibrar_optimizer <- function(par, fn, gr = NULL, ..., control = list()
 }
 
 # Function to pass to the `control` argument of glmmTMB::glmmTMB
-glmmTMB_calibrar_control <- function(..., method = NULL) {
+glmmTMB_calibrar_control <- function(optArgs=list(), optCtrl=list(), method = NULL) {
   if (is.null(method)) {
     stop("Please specify a method for calibrar optimization.")
   }
   ncores <- parallel::detectCores() - 1
+  
+  myoptArgs = list(method = method)
+  if(length(optArgs) > 0) {
+    optArgs = rlist::list.merge(myoptArgs, optArgs)
+  } else {
+    optArgs = myoptArgs
+  }
+  print("optArgs:")
+  print(optArgs)
+  
+  myoptCtrl = list(ncores = ncores)
+  if(length(optCtrl) > 0) {
+    optCtrl = rlist::list.merge(myoptArgs, optCtrl)
+  } else {
+    optCtrl = myoptCtrl
+  }
+  print("optCtrl:")
+  print(optCtrl)
+  
+  
   res <- glmmTMB::glmmTMBControl(
     parallel = list(n=ncores, autopar=TRUE),
     optimizer = glmmTMB_calibrar_optimizer,
-    optArgs = list(method = method),
-    optCtrl = list(ncores = ncores),
+    optArgs = optArgs,
+    optCtrl = optCtrl,
     # eigval_check = FALSE,
     # rank_check = "skip",
     # conv_check = "skip"
@@ -47,71 +69,71 @@ glmmTMB_calibrar_control <- function(..., method = NULL) {
 }
 
 #' @export
-glmmTMB_calibrar_control_nelder_mead <- function(...) {
-  return(glmmTMB_calibrar_control(method = "Nelder-Mead"))
+glmmTMB_calibrar_control_nelder_mead <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "Nelder-Mead"))
 }
 
 #' @export
-glmmTMB_calibrar_control_nelder_bfgs <- function(...) {
-  return(glmmTMB_calibrar_control(method = "BFGS"))
+glmmTMB_calibrar_control_nelder_bfgs <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "BFGS"))
 }
 
 #' @export
-glmmTMB_calibrar_control_nelder_cg <- function(...) {
-  return(glmmTMB_calibrar_control(method = "CG"))
+glmmTMB_calibrar_control_nelder_cg <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "CG"))
 }
 
 #' @export
-glmmTMB_calibrar_control_lbfgsb <- function(...) {
-  return(glmmTMB_calibrar_control(method = "L-BFGS-B"))
+glmmTMB_calibrar_control_lbfgsb <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "L-BFGS-B"))
 }
 
 #' @export
-glmmTMB_calibrar_control_sann <- function(...) {
-  return(glmmTMB_calibrar_control(method = "SANN"))
+glmmTMB_calibrar_control_sann <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "SANN"))
 }
 
 #' @export
-glmmTMB_calibrar_control_brent <- function(...) {
-  return(glmmTMB_calibrar_control(method = "Brent"))
+glmmTMB_calibrar_control_brent <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "Brent"))
 }
 
 #' @export
-glmmTMB_calibrar_control_nlm <- function(...) {
-  return(glmmTMB_calibrar_control(method = "nlm"))
+glmmTMB_calibrar_control_nlm <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "nlm"))
 }
 
 #' @export
-glmmTMB_calibrar_control_nlminb <- function(...) {
-  return(glmmTMB_calibrar_control(method = "nlminb"))
+glmmTMB_calibrar_control_nlminb <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "nlminb"))
 }
 
 #' @export
-glmmTMB_calibrar_control_rcgmin <- function(...) {
-  return(glmmTMB_calibrar_control(method = "Rcgmin"))
+glmmTMB_calibrar_control_rcgmin <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "Rcgmin"))
 }
 
 #' @export
-glmmTMB_calibrar_control_Rvmmin <- function(...) {
-  return(glmmTMB_calibrar_control(method = "Rvmmin"))
+glmmTMB_calibrar_control_Rvmmin <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "Rvmmin"))
 }
 
 #' @export
-glmmTMB_calibrar_control_hjn <- function(...) {
-  return(glmmTMB_calibrar_control(method = "hjn"))
+glmmTMB_calibrar_control_hjn <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "hjn"))
 }
 
 #' @export
-glmmTMB_calibrar_control_spg <- function(...) {
-  return(glmmTMB_calibrar_control(method = "spg"))
+glmmTMB_calibrar_control_spg <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "spg"))
 }
 
 #' @export
-glmmTMB_calibrar_control_lbfgsb3 <- function(...) {
-  return(glmmTMB_calibrar_control(method = "LBFGSB3"))
+glmmTMB_calibrar_control_lbfgsb3 <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "LBFGSB3"))
 }
 
 #' @export
-glmmTMB_calibrar_control_ahres <- function(...) {
-  return(glmmTMB_calibrar_control(method = "AHR-ES"))
+glmmTMB_calibrar_control_ahres <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_calibrar_control(optArgs=optArgs, optCtrl=optCtrl, method = "AHR-ES"))
 }
