@@ -61,7 +61,7 @@ correlation_table <- function(df) {
   tbl <- modelsummary::datasummary_correlation(
     corr_mod,
     stars = TRUE,
-    out = "flextable"
+    output = "flextable"
   ) %>%
     flextable::add_footer_lines(values = footer)
   

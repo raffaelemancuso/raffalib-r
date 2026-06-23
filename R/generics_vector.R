@@ -42,20 +42,20 @@ as.named.list <- function(v) {
 #' @return A new vector with the specified elements moved to their new positions.
 #' @examples
 #' vector <- c("one","two","three","four","five","six","seven","eight","nine","ten")
-#' relocate.vect(vector,"eight", 4)
-#' relocate.vect(vector,c("eight","one"), c(4,8))
+#' vec_relocate(vector,"eight", 4)
+#' vec_relocate(vector,c("eight","one"), c(4,8))
 #' @export
-relocate.vect <- function(vect,what,where) {
+vec_relocate <- function(vect,what,where) {
   # Function to move a single element
   arrange.single <- function(vect,what,where) {
     stopifnot(length(what)==1)
     stopifnot(length(where)==1)
     idx <- which(vect==what)
     if(length(idx)==0) {
-      stop(glue("Element '{what}' not found in vector"))
+      cli::cli_abort("Element {.val {what}} not found in vector")
     }
     if(length(idx)>1) {
-      stop(glue("More than one '{what}' found in vector"))
+      cli::cli_abort("More than one {.val {what}} found in vector")
     }
     append(vect[-idx], vect[idx], where-1)
   }
@@ -71,4 +71,11 @@ relocate.vect <- function(vect,what,where) {
     }
     return(vect)
   }
+}
+
+#' @export
+vec_rename <- function(vec, l) {
+  to_rename <- vec %in% names(l)
+  vec[to_rename] <- l[vec[to_rename]] %>% unlist()
+  return(vec)
 }

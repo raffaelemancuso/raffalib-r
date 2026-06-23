@@ -21,18 +21,35 @@
 #'
 #' @export 
 #' @examples
-#' findMethod(as.ts, iris)
-#' findMethod(print, iris)
-#' findMethod(print, Sys.time())
-#' findMethod(print, 22)
-#' findMethod(print, ordered(3))
-#' findMethod(`[`, BOD, 1:2, "Time")
+#' find_method(as.ts, iris)
+#' find_method(print, iris)
+#' find_method(print, Sys.time())
+#' find_method(print, 22)
+#' find_method(print, ordered(3))
+#' find_method(`[`, BOD, 1:2, "Time")
 find_method <- function(generic, ...) {
   ch <- deparse(substitute(generic))
   f <- X <- function(x, ...) UseMethod("X")
   for(m in methods(ch)) assign(sub(ch, "X", m, fixed = TRUE), "body<-"(f, value = m))
   X(...)
 }
+
+#' @export
+read_backup <- function(dirpath, filestem) {
+  infp <- dirpath %>% list.files() %>%
+    str_subset(glue(
+      "{filestem}_\\d{{4}}-\\d{{2}}-\\d{{2}}_\\d{{2}}-\\d{{2}}-\\d{{2}}\\.rds"
+    )) %>%
+    str_sort(numeric = TRUE, decreasing = TRUE) %>%
+    head(1)
+  if(length(infp)==0) {
+    stop(glue("No file found in {infp}"))
+  }
+  infp <- file.path(dirpath, infp)
+  cat(glue("Reading \"{infp}\""))
+  return(readRDS(infp))
+}
+
 
 #' Save time-stamped backup of an object
 #'

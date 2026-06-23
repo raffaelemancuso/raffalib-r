@@ -7,7 +7,6 @@ Author: Raffaele Mancuso <raffaele.mancuso4@unibo.it>
 Maintainer: Raffaele Mancuso <raffaele.mancuso4@unibo.it>
 License: GPL-3
 Imports:
-    R.utils,
     calibrar,
     cli,
     correlation,
@@ -17,6 +16,7 @@ Imports:
     glmmTMB,
     gtools,
     gtsummary,
+    insight,
     labelled,
     magrittr,
     modelsummary,
@@ -25,11 +25,10 @@ Imports:
     optimx,
     parallel,
     plyr,
-    ragg,
     reformulas,
     rlang,
+    rlist,
     stringr,
-    tidyselect,
-    varhandle
+    tidyselect
 Encoding: UTF-8
 Config/roxygen2/version: 8.0.0

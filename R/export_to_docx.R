@@ -26,37 +26,42 @@ paper_sizes <- list(
 
 # convert inches in mm
 inch2mm <- function(s) {
-  return(s*25.4)
+  return(s * 25.4)
 }
 
 mm2inch <- function(s) {
-  return(s/25.4)
+  return(s / 25.4)
 }
 
 compute_max_size <- function(doc_gg) {
   word_size <- officer::docx_dim(doc_gg)
-  width <- word_size$page['width'] - word_size$margins['left'] - word_size$margins['right']
-  height <- word_size$page['height'] - word_size$margins['top'] - word_size$margins['bottom']
+  width <- word_size$page['width'] -
+    word_size$margins['left'] -
+    word_size$margins['right']
+  height <- word_size$page['height'] -
+    word_size$margins['top'] -
+    word_size$margins['bottom']
   width <- inch2mm(width)
   height <- inch2mm(height)
   width <- width * 0.9
   height <- height * 0.9
-  return(list(width=width, height=height))
+  return(list(width = width, height = height))
 }
 
 #' Prepare docx for export
-prepare_docx <- function(  caption_text = "",
-                           caption_font_family = "Aptos",
-                           caption_font_size = 12,
-                           caption_bold = TRUE,
-                           caption_italic = FALSE,
-                           page_landscape = FALSE,
-                           paper_format = "A4",
-                           page_margin_bottom = 1,
-                           page_margin_top = 1,
-                           page_margin_left = 1,
-                           page_margin_right = 1) {
-  
+prepare_docx <- function(
+  caption_text = "",
+  caption_font_family = "Aptos",
+  caption_font_size = 12,
+  caption_bold = TRUE,
+  caption_italic = FALSE,
+  page_landscape = FALSE,
+  paper_format = "A4",
+  page_margin_bottom = 1,
+  page_margin_top = 1,
+  page_margin_left = 1,
+  page_margin_right = 1
+) {
   # Define page size
   paper_size <- paper_sizes[[paper_format]]
   page_size <- officer::page_size(
@@ -65,7 +70,7 @@ prepare_docx <- function(  caption_text = "",
     orient = ifelse(page_landscape, "landscape", "portrait"),
     unit = "mm"
   )
-  
+
   # Define page margins
   # Unit of measurement of page margins is inches and apparently can't be changed
   page_margins <- officer::page_mar(
@@ -74,7 +79,7 @@ prepare_docx <- function(  caption_text = "",
     right = page_margin_right,
     left = page_margin_left
   )
-  
+
   # Define section properties
   #
   # A section is a grouping of blocks (ie. paragraphs and tables)
@@ -104,32 +109,32 @@ prepare_docx <- function(  caption_text = "",
     vertical.align = "baseline",
     shading.color = "transparent"
   )
-  
+
   # Add formatted chunk of text
   #
   # Format a chunk of text with text formatting properties (bold, color, ...).
   # The function allows you to create pieces of text formatted the way you want.
-  txt <- officer::ftext(
+  caption_ftext <- officer::ftext(
     caption_text,
     prop = caption_formatting
   )
 
   # Add formatted paragraph
   #
-  # Create a paragraph representation by concatenating formatted text or images. 
-  # The result can be inserted in a Word document or a PowerPoint presentation 
+  # Create a paragraph representation by concatenating formatted text or images.
+  # The result can be inserted in a Word document or a PowerPoint presentation
   # and can also be inserted in a block_list() call.
   #
   # All its arguments will be concatenated to create a paragraph
   # where chunks of text and images are associated with formatting properties.
   #
-  # fpar() supports ftext(), external_img(), run_*() functions (i.e. run_autonum(), run_word_field()) 
+  # fpar() supports ftext(), external_img(), run_*() functions (i.e. run_autonum(), run_word_field())
   # when output is Word, and simple strings.
-  caption_fpar <- officer::fpar(txt)
+  caption_fpar <- officer::fpar(caption_ftext)
 
   # Create document
-  docx <- officer::read_docx() 
-  
+  docx <- officer::read_docx()
+
   # Add caption
   docx <- docx %>% officer::body_add_fpar(caption_fpar)
 
@@ -146,7 +151,7 @@ prepare_docx <- function(  caption_text = "",
 
 #' Save docx file
 finalize_docx <- function(outs, outfp) {
-  # It's necessary to define the same default section than the one you want to end the document 
+  # It's necessary to define the same default section than the one you want to end the document
   # so that Word agree to not add a page
   # See: https://stackoverflow.com/a/75451251/1719931
   outs[["docx"]] %>%
@@ -179,10 +184,10 @@ plot2docx <- function(
       "If you specify either plot_width or plot_height, you must specify both."
     )
   }
-  
+
   # Initialize Word document
   outs <- do.call(prepare_docx, word_prop)
-  
+
   # Compute a reasonable size if the user didn't define a size
   if (is.null(plot_width)) {
     sizes <- compute_max_size(outs[["docx"]])
@@ -218,7 +223,6 @@ ggplot2docx <- function(
   plot_unit = "mm",
   word_prop = list()
 ) {
-  
   # Check inputs
   if (
     (is.null(plot_width) & !is.null(plot_height)) |
@@ -231,7 +235,7 @@ ggplot2docx <- function(
 
   # Initialize Word document
   outs <- do.call(prepare_docx, word_prop)
-  
+
   # Guess plot size if not specified
   if (is.null(plot_width)) {
     sizes <- compute_max_size(outs[["docx"]])
@@ -257,11 +261,11 @@ ggplot2docx <- function(
 
 #' Save a flextable (typically a regression table generated by modelsummary) to a .docx file
 #'
+#' @importFrom magrittr %<>%
 #' @export
 flextable2docx <- function(
   tbl,
   outfp,
-  footer = NULL,
   font_name = "Aptos",
   font_size = 12,
   align = "left",
@@ -270,29 +274,23 @@ flextable2docx <- function(
   layout_autofit = TRUE,
   word_prop = list()
 ) {
-  
   # Initialize Word document
   outs <- do.call(prepare_docx, word_prop)
 
   # Define table layout
   layout <- ifelse(layout_autofit, "autofit", "fixed")
 
-  # Define flextable properties
-  if (!is.null(footer)) {
-    tbl %<>%
-      flextable::add_footer_lines(footer)
-  }
-
   tbl %<>%
     flextable::font(fontname = font_name, part = "all") %>%
     flextable::fontsize(size = font_size, part = "all") %>%
     flextable::set_table_properties(layout = layout, align = align)
-  
-  if(!is.null(padding)) {
-    tbl %<>% flextable::padding(
-      padding = padding,
-      part = "all"
-    )
+
+  if (!is.null(padding)) {
+    tbl %<>%
+      flextable::padding(
+        padding = padding,
+        part = "all"
+      )
   }
 
   if (!is.null(column_width)) {

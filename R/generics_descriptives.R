@@ -18,7 +18,7 @@
 
 #' @export
 myfreq <- function(x) {
-  DescTools::Freq(x, useNA = "always", order="desc")
+  DescTools::Freq(x, useNA = "always", ord="desc")
 }
 
 #' Get equally-space quantiles for a numeric vector
@@ -36,10 +36,15 @@ descquant <- function(x, int=0.1) {
 #' @param d The vector to check for missings and infinity values
 #' @export
 descstrange <- function(d) {
+  cperc <- function(x) {
+    round(100*x/length(d),2)
+  }
   n_miss <- sum(is.na(d))
-  print(paste0("N. missing: ", n_miss, " (", round(100*n_miss/length(d),2), "%)"))
+  print(paste0("N. missing: ", n_miss, " (", cperc(n_miss), "%)"))
+  n_nans <- sum(is.nan(d))
+  print(paste0("N. NANs: ", n_nans, " (", cperc(n_nans), "%)"))
   n_inf <- sum(is.infinite(d))
-  print(paste0("N. infinity: ", n_inf, " (", round(100*n_inf/length(d),2), "%)"))
+  print(paste0("N. infinity: ", n_inf, " (", cperc(n_inf), "%)"))
 }
 
 #' Find observations dropped from a model
@@ -48,14 +53,52 @@ descstrange <- function(d) {
 #' @export
 get_dropped_obs <- function(mod, df, .keep_vars = FALSE) {
   model_vars <- all.vars(terms(mod))
-  if (class(.keep_vars) == "character") {
+  if (is.character(.keep_vars)) {
     return(df[!complete.cases(df[model_vars]), c(.keep_vars, model_vars)])
-  } else if (.keep_vars == FALSE) {
+  } else if (isFALSE(.keep_vars)) {
     return(df[!complete.cases(df[model_vars]), model_vars])
-  } else if (.keep_vars == TRUE) {
+  } else if (isTRUE(.keep_vars)) {
     return(df[!complete.cases(df[model_vars]), ])
   } else {
     stop("Unknown value for .keep_vars")
+  }
+}
+
+#' Return the observations dropped from a fitted model due to missing values
+#'
+#' Given a fitted model and the data frame it was estimated on, returns the rows
+#' that contain at least one `NA` in any of the variables the model uses (its
+#' predictors and response). These are the observations that `feols()`/`lm()`
+#' silently drop via listwise deletion, so the result is useful for diagnosing
+#' *why* the estimation sample is smaller than the full data set.
+#'
+#' The model's variables are extracted with `insight::find_predictors()` and
+#' `insight::find_response()`, then combined into `all_vars`. A row is returned
+#' whenever any of those variables is `NA` (`if_any(all_of(all_vars), ~ is.na(.))`).
+#'
+#' @param mod A fitted model object supported by the `insight` package
+#'   (e.g. an `feols` or `lm` fit).
+#' @param df The data frame the model was estimated on. Must contain every
+#'   predictor and response variable referenced by `mod`.
+#' @param .keep_vars Controls which columns are kept in the returned data frame:
+#'   - `FALSE` (default): keep only the model variables (`all_vars`).
+#'   - `TRUE`: keep all columns of `df`.
+#'   - a character vector: keep the model variables plus the named columns.
+#'
+#' @return A data frame of the dropped rows (those with at least one `NA` among
+#'   the model variables), subset to the columns selected by `.keep_vars`.
+get_dropped_obs_2 <- function(mod, df, .keep_vars=FALSE) {
+  xs <- insight::find_predictors(mod) %>% unlist() %>% as.character()
+  ys <- insight::find_response(mod)
+  all_vars <- c(xs, ys)
+  filtered <- df %>% filter(if_any(all_of(all_vars), ~ is.na(.)))
+  if (.keep_vars == TRUE) {
+    return(filtered)
+  } else if (.keep_vars == FALSE) {
+    return(filtered %>% select(all_of(all_vars)))
+  } else {
+    selected_vars <- c(all_vars, .keep_vars)
+    return(filtered %>% select(all_of(selected_vars)))
   }
 }
 
