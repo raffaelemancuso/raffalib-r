@@ -1,6 +1,6 @@
 # --- OPTIMH (calibrar heuristic / global optimisers) --- #
 # Mirrors glmmTMB_calibrar.R (which wraps calibrar::optim2) so the optimh,
-# optim2 and optmix control APIs are identical: a generic builder plus thin
+# optim2 and optimx control APIs are identical: a generic builder plus thin
 # per-method `function(optArgs, optCtrl)` wrappers.
 
 # Function to pass to the `optimizer` argument of glmmTMB::glmmTMBControl

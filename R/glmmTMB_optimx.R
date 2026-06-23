@@ -1,11 +1,11 @@
-# --- GLMMTMB OPTMIX OPTIMIZER --- #
+# --- GLMMTMB OPTIMX OPTIMIZER --- #
 
-#' Use optmix's optimizers for glmmTMB
+#' Use optimx's optimizers for glmmTMB
 #'
 #' @return Object to be passed to the `optimizer` argument of `glmmTMBControl()`
 #' @export
-glmmTMB_optmix_optim <- function(...) {
-  print("optmix optimization")
+glmmTMB_optimx_optim <- function(...) {
+  print("optimx optimization")
   ret <- optimx::optimr(...)
   # glmmTMB automatically handles output from optim(), by renaming the value component to objective
   mask <- names(ret) == "value"
@@ -14,11 +14,11 @@ glmmTMB_optmix_optim <- function(...) {
 }
 
 # Function to pass to the `control` argument of glmmTMB::glmmTMB
-# (mirrors glmmTMB_control_calibrar so the optmix and calibrar APIs match)
-glmmTMB_control_optmix <- function(optArgs=list(), optCtrl=list(), method = NULL) {
+# (mirrors glmmTMB_control_calibrar so the optimx and calibrar APIs match)
+glmmTMB_control_optimx <- function(optArgs=list(), optCtrl=list(), method = NULL) {
 
   if (is.null(method)) {
-    stop("Please specify a method for optmix optimization.")
+    stop("Please specify a method for optimx optimization.")
   }
 
   ncores <- parallel::detectCores() - 2
@@ -34,7 +34,7 @@ glmmTMB_control_optmix <- function(optArgs=list(), optCtrl=list(), method = NULL
   # Build glmmTMBControl
   res <- glmmTMB::glmmTMBControl(
     parallel = ncores,
-    optimizer = glmmTMB_optmix_optim,
+    optimizer = glmmTMB_optimx_optim,
     optArgs = optArgs,
     optCtrl = optCtrl
   )
@@ -42,156 +42,156 @@ glmmTMB_control_optmix <- function(optArgs=list(), optCtrl=list(), method = NULL
 }
 
 #' @export
-glmmTMB_control_optmix_nvm <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "nvm"))
+glmmTMB_control_optimx_nvm <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "nvm"))
 }
 
 #' @export
-glmmTMB_control_optmix_lbfgsb3c <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "lbfgsb3c"))
+glmmTMB_control_optimx_lbfgsb3c <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "lbfgsb3c"))
 }
 
 #' @export
-glmmTMB_control_optmix_hjkb <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "hjkb"))
+glmmTMB_control_optimx_hjkb <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "hjkb"))
 }
 
 #' @export
-glmmTMB_control_optmix_ncg <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "ncg"))
+glmmTMB_control_optimx_ncg <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "ncg"))
 }
 
 #' @export
-glmmTMB_control_optmix_lbfgsb <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "L-BFGS-B"))
+glmmTMB_control_optimx_lbfgsb <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "L-BFGS-B"))
 }
 
 #' @export
-glmmTMB_control_optmix_bfgs <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "BFGS"))
+glmmTMB_control_optimx_bfgs <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "BFGS"))
 }
 
 #' @export
-glmmTMB_control_optmix_cg <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "CG"))
+glmmTMB_control_optimx_cg <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "CG"))
 }
 
 #' @export
-glmmTMB_control_optmix_neldermead <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "Nelder-Mead"))
+glmmTMB_control_optimx_neldermead <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "Nelder-Mead"))
 }
 
 #' @export
-glmmTMB_control_optmix_nlm <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "nlm"))
+glmmTMB_control_optimx_nlm <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "nlm"))
 }
 
 #' @export
-glmmTMB_control_optmix_nlminb <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "nlminb"))
+glmmTMB_control_optimx_nlminb <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "nlminb"))
 }
 
 #' @export
-glmmTMB_control_optmix_rcgmin <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "Rcgmin"))
+glmmTMB_control_optimx_rcgmin <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "Rcgmin"))
 }
 
 #' @export
-glmmTMB_control_optmix_rtnmin <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "Rtnmin"))
+glmmTMB_control_optimx_rtnmin <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "Rtnmin"))
 }
 
 #' @export
-glmmTMB_control_optmix_rvmmin <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "Rvmmin"))
+glmmTMB_control_optimx_rvmmin <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "Rvmmin"))
 }
 
 #' @export
-glmmTMB_control_optmix_snewton <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "snewton"))
+glmmTMB_control_optimx_snewton <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "snewton"))
 }
 
 #' @export
-glmmTMB_control_optmix_snewtonm <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "snewtonm"))
+glmmTMB_control_optimx_snewtonm <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "snewtonm"))
 }
 
 #' @export
-glmmTMB_control_optmix_spg <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "spg"))
+glmmTMB_control_optimx_spg <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "spg"))
 }
 
 #' @export
-glmmTMB_control_optmix_ucminf <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "ucminf"))
+glmmTMB_control_optimx_ucminf <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "ucminf"))
 }
 
 #' @export
-glmmTMB_control_optmix_newuoa <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "newuoa"))
+glmmTMB_control_optimx_newuoa <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "newuoa"))
 }
 
 #' @export
-glmmTMB_control_optmix_bobyqa <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "bobyqa"))
+glmmTMB_control_optimx_bobyqa <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "bobyqa"))
 }
 
 #' @export
-glmmTMB_control_optmix_uobyqa <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "uobyqa"))
+glmmTMB_control_optimx_uobyqa <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "uobyqa"))
 }
 
 #' @export
-glmmTMB_control_optmix_nmkb <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "nmkb"))
+glmmTMB_control_optimx_nmkb <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "nmkb"))
 }
 
 #' @export
-glmmTMB_control_optmix_hjn <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "hjn"))
+glmmTMB_control_optimx_hjn <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "hjn"))
 }
 
 #' @export
-glmmTMB_control_optmix_lbfgs <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "lbfgs"))
+glmmTMB_control_optimx_lbfgs <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "lbfgs"))
 }
 
 #' @export
-glmmTMB_control_optmix_subplex <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "subplex"))
+glmmTMB_control_optimx_subplex <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "subplex"))
 }
 
 #' @export
-glmmTMB_control_optmix_mla <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "mla"))
+glmmTMB_control_optimx_mla <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "mla"))
 }
 
 #' @export
-glmmTMB_control_optmix_slsqp <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "slsqp"))
+glmmTMB_control_optimx_slsqp <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "slsqp"))
 }
 
 #' @export
-glmmTMB_control_optmix_tnewt <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "tnewt"))
+glmmTMB_control_optimx_tnewt <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "tnewt"))
 }
 
 #' @export
-glmmTMB_control_optmix_anms <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "anms"))
+glmmTMB_control_optimx_anms <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "anms"))
 }
 
 #' @export
-glmmTMB_control_optmix_pracmanm <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "pracmanm"))
+glmmTMB_control_optimx_pracmanm <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "pracmanm"))
 }
 
 #' @export
-glmmTMB_control_optmix_nlnm <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "nlnm"))
+glmmTMB_control_optimx_nlnm <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "nlnm"))
 }
 
 #' @export
-glmmTMB_control_optmix_snewtm <- function(optArgs=list(), optCtrl=list()) {
-  return(glmmTMB_control_optmix(optArgs=optArgs, optCtrl=optCtrl, method = "snewtm"))
+glmmTMB_control_optimx_snewtm <- function(optArgs=list(), optCtrl=list()) {
+  return(glmmTMB_control_optimx(optArgs=optArgs, optCtrl=optCtrl, method = "snewtm"))
 }
