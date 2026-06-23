@@ -1,3 +1,7 @@
 *.pdf
 /man
 /docs
+
+# Generated benchmark outputs (regenerated locally, not tracked)
+data-raw/glmmTMB_optimizer_benchmark.md
+data-raw/glmmTMB_optimizer_benchmark.xlsx

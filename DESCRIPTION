@@ -13,6 +13,7 @@ Imports:
     DescTools,
     dplyr,
     flextable,
+    generics,
     glmmTMB,
     gtools,
     gtsummary,
@@ -30,5 +31,11 @@ Imports:
     rlist,
     stringr,
     tidyselect
+Suggests:
+    testthat (>= 3.0.0),
+    fixest,
+    future,
+    future.apply
 Encoding: UTF-8
 Config/roxygen2/version: 8.0.0
+Config/testthat/edition: 3
