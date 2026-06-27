@@ -18,7 +18,7 @@ help pages.
 
 ```r
 # install.packages("remotes")
-remotes::install_github("raffaem/raffalib-r")
+remotes::install_github("raffaelemancuso/raffalib-r")
 ```
 
 The package leans on a fairly wide set of CRAN packages (it `Imports` modelsummary,

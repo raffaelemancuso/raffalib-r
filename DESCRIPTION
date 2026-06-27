@@ -14,8 +14,8 @@ Authors@R:
            email = "raffaele.mancuso4@unibo.it",
            role = c("aut", "cre"))
 License: GPL-3
-URL: https://github.com/raffaem/raffalib-r
-BugReports: https://github.com/raffaem/raffalib-r/issues
+URL: https://github.com/raffaelemancuso/raffalib-r
+BugReports: https://github.com/raffaelemancuso/raffalib-r/issues
 Imports:
     calibrar,
     cli,
