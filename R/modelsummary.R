@@ -81,9 +81,17 @@ modelsummary_getgofmap <- function() {
   return(gof_map)
 }
 
-#' Build a named character vector mapping variable names to variable labels, including factor levels
-#' 
-#' @return A named list to be passed to the `coef_map` argument of `modelsummary()`
+#' Build a labelled coefficient map for modelsummary
+#'
+#' Builds a named map from variable names to their variable labels, expanding
+#' factor variables into one entry per level (`nameLevel` -> `label [level]`).
+#' Variables without a label fall back to their name, so `modelsummary` still
+#' prints them.
+#'
+#' @param df A data frame whose columns carry variable labels.
+#' @param debug If `TRUE`, print progress messages while building the map.
+#' @return A named list to pass to the `coef_map` argument of
+#'   [modelsummary::modelsummary()].
 #' @export
 modelsummary_build_labelled_coef_map <- function(df, debug=FALSE) {
   # Get a named character vector that maps variable names to variable labels

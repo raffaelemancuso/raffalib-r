@@ -22,17 +22,19 @@
 #' @param o Mapping list, where names are the old names and values are the new names (`old name`=`new name`)
 #' @param .strict If TRUE, all names of l must be in names(o). If FALSE, the names of l that are not in names(o) will be kept.
 #'
-#' @return A list with the same elements as l but with names renamed according to o.
+#' @return A list with the same elements as `l` but with names renamed according
+#'   to `o`.
 #'
 #' @examples
-#' l1 <- list(dv1="Model 1 here", dv2="Model 2 here")
-#' l2 <- list(dv1="Label_for_DV1", dv2="Label_for_DV2")
-#' l3 <- list(dv2="Label_for_DV2")
-#' list.rename(l1, l2)
-#' list.rename(l1, l3, .strict=FALSE)
-#' list.rename(l1, l3, .strict=TRUE)
+#' l1 <- list(dv1 = "Model 1 here", dv2 = "Model 2 here")
+#' l2 <- list(dv1 = "Label_for_DV1", dv2 = "Label_for_DV2")
+#' l3 <- list(dv2 = "Label_for_DV2")
+#' list_rename_names(l1, l2)
+#' list_rename_names(l1, l3, .strict = FALSE)
+#' # .strict = TRUE errors when a name of `l` is missing from `o`:
+#' try(list_rename_names(l1, l3, .strict = TRUE))
 #' @export
-list.rename.names <- function(l, o, .strict = TRUE) {
+list_rename_names <- function(l, o, .strict = TRUE) {
   if (.strict) {
     check <- names(l) %in% names(o)
     stopifnot(all(check))
@@ -46,8 +48,21 @@ list.rename.names <- function(l, o, .strict = TRUE) {
   return(l)
 }
 
+#' Recode the values of a list according to a mapping
+#'
+#' Replaces each element of `from` whose value matches a name in `to` with the
+#' corresponding value of `to`. Elements with no match are left unchanged. This
+#' is the value-side counterpart of [list_rename_names()], which renames the
+#' names of a list.
+#'
+#' @param from A list (or vector) of values to recode.
+#' @param to A named mapping list whose names are the old values and whose
+#'   values are the replacements.
+#' @return `from` with matched values replaced by their mapping.
+#' @examples
+#' list_rename_values(list("a", "b", "c"), list(a = "Apple", c = "Cherry"))
 #' @export
-list.rename.values <- function(from, to) {
+list_rename_values <- function(from, to) {
   for (i in seq_along(from)) {
     var <- from[[i]]
     label <- to[[var]]
@@ -58,16 +73,26 @@ list.rename.values <- function(from, to) {
   return(from)
 }
 
-#' Sort a named list by names
+#' Sort a named list by its names
 #'
+#' Reorders the elements of a named list by the natural (human) sort order of
+#' its names, so that e.g. `item10` follows `item2`.
+#'
+#' @param l A named list.
+#' @return `l` reordered by name.
 #' @export
 sort_named_list_by_names <- function(l) {
   l <- l[gtools::mixedsort(names(l))]
   return(l)
 }
 
-#' Sort a named list by values
+#' Sort a named list by its values
 #'
+#' Reorders the elements of a named list by the natural (human) sort order of
+#' its values (coerced to character).
+#'
+#' @param l A named list.
+#' @return `l` reordered by value.
 #' @export
 sort_named_list_by_values <- function(l) {
   l <- l[gtools::mixedorder(as.character(l))]

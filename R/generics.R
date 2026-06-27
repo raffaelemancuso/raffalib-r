@@ -16,17 +16,22 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 # ---------------------------------------------------------------------- #
 
-#' It will return a character string representing the name of the method that would be dispatched by the input generic given that generic and its arguments.
-#' See: https://stackoverflow.com/a/42742370/1719931
+#' Find the S3 method a generic would dispatch
 #'
-#' @export 
+#' Returns the name of the method that would be dispatched by `generic` for the
+#' supplied arguments, without actually calling it. Handy for debugging S3
+#' dispatch. Adapted from <https://stackoverflow.com/a/42742370/1719931>.
+#'
+#' @param generic A generic function, passed unquoted (e.g. `print`).
+#' @param ... Arguments that would be passed to `generic`; dispatch is resolved
+#'   on the first one.
+#' @return A length-one character vector with the name of the dispatched method.
+#' @importFrom utils methods
+#' @export
 #' @examples
-#' find_method(as.ts, iris)
 #' find_method(print, iris)
 #' find_method(print, Sys.time())
-#' find_method(print, 22)
 #' find_method(print, ordered(3))
-#' find_method(`[`, BOD, 1:2, "Time")
 find_method <- function(generic, ...) {
   ch <- deparse(substitute(generic))
   f <- X <- function(x, ...) UseMethod("X")
@@ -34,6 +39,18 @@ find_method <- function(generic, ...) {
   X(...)
 }
 
+#' Read the most recent time-stamped backup of an object
+#'
+#' Companion to [save_backup()]. Searches `dirpath` for files named
+#' `"<filestem>_YYYY-MM-DD_HH-MM-SS.rds"` and reads back the most recent one
+#' (newest time stamp by natural sort).
+#'
+#' @param dirpath Directory to search for backups.
+#' @param filestem The file stem used when the backup was written.
+#' @return The object stored in the most recent matching `.rds` file.
+#' @seealso [save_backup()]
+#' @importFrom stringr str_subset str_sort
+#' @importFrom glue glue
 #' @export
 read_backup <- function(dirpath, filestem) {
   infp <- dirpath %>% list.files() %>%
@@ -51,8 +68,19 @@ read_backup <- function(dirpath, filestem) {
 }
 
 
-#' Save time-stamped backup of an object
+#' Save a time-stamped backup of an object
 #'
+#' Writes `obj` to `"<file_stem>_YYYY-MM-DD_HH-MM-SS.rds"` inside `out_dir`, so
+#' successive calls never overwrite one another. Read the latest one back with
+#' [read_backup()].
+#'
+#' @param obj The object to serialise.
+#' @param out_dir Destination directory.
+#' @param file_stem File-name stem; the time stamp and `.rds` extension are
+#'   appended automatically.
+#' @return Invisibly, the return value of [saveRDS()]; called for its side
+#'   effect of writing the file.
+#' @seealso [read_backup()]
 #' @export
 save_backup <- function(obj, out_dir, file_stem) {
   timestamp <- strftime(Sys.time(), "%Y-%m-%d_%H-%M-%S")
@@ -62,17 +90,17 @@ save_backup <- function(obj, out_dir, file_stem) {
   saveRDS(obj, fp)
 }
 
-#' Generate batches of indices for a given total size and batch size.
-#' This function creates a list of batches, where each batch is a list containing the batch number, start index, and end index.
-#' For example, if total_size is 10 and batch_size is 3, the function will return a list of batches:
-#' - Batch 1: start index 1, end index 3
-#' - Batch 2: start index 4, end index 6
-#' - Batch 3: start index 7, end index 9
-#' - Batch 4: start index 10, end index 10
-#' This function is useful for processing data in chunks, especially when dealing with large datasets that cannot be loaded into memory all at once.
+#' Split a range of indices into consecutive batches
+#'
+#' Creates a list of batches covering `1:total_size`, each batch a list with the
+#' batch number, start index and end index. Useful for processing data in chunks
+#' (e.g. datasets too large to handle at once). For `total_size = 10` and
+#' `batch_size = 3` the batches span 1-3, 4-6, 7-9 and 10-10.
+#'
 #' @param total_size The total number of items to be processed.
-#' @param batch_size The number of items to be processed in each batch.
-#' @return A list of batches, where each batch is a list containing the batch number, start index, and end index.
+#' @param batch_size The number of items in each batch.
+#' @return A list of batches; each element is a list with `batch_number`,
+#'   `batch_start` and `batch_end`.
 #' @examples
 #' gen_batches(10, 3)
 #' gen_batches(25, 4)

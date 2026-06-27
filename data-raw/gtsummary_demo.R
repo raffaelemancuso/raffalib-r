@@ -1,4 +1,13 @@
+# Demo / scratch script for the gtsummary helpers in raffalib
+# (gtsummary_add_mean_diff(), gtsummary_add_significance_stars()).
+# Kept under data-raw/ (build-ignored) rather than tests/, since it is an
+# illustrative example, not an automated test.
+
 library(gtsummary)
+library(magrittr)   # %>% and %<>%
+library(dplyr)
+library(glue)
+library(raffalib)
 
 N <- 1000
 toydf <- data.frame(

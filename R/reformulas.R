@@ -26,8 +26,9 @@
 #' reformulas_addints(mpg ~ cyl + gear, "cyl", c("gear"))
 #' reformulas_addints(mpg ~ cyl + gear + disp, "cyl", c("gear", "disp"))
 #' reformulas_addints(mpg ~ cyl + gear + disp + hp, "cyl", c("gear", "disp"))
-#' reformulas_addints(mpg ~ cyl + gear, "cyl", c("gears"))
-#' reformulas_addints(mpg ~ cyl + cyl*gear, "cyl", c("gear"))
+#' reformulas_addints(mpg ~ cyl + cyl * gear, "cyl", c("gear"))
+#' # A control that is not in the formula is an error:
+#' try(reformulas_addints(mpg ~ cyl + gear, "cyl", c("gears")))
 reformulas_addints <- function(form, treat, controls) {
   stopifnot (inherits(form, "formula"))
   terms <- terms(form)

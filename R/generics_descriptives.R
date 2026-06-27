@@ -16,24 +16,39 @@
 
 # --- DESCRIPTIVES --- #
 
+#' Frequency table including missing values
+#'
+#' Thin wrapper around [DescTools::Freq()] that always reports `NA`s and orders
+#' categories by descending frequency.
+#'
+#' @param x A factor or vector to tabulate.
+#' @return A frequency table (a `data.frame`) as returned by [DescTools::Freq()].
 #' @export
 myfreq <- function(x) {
   DescTools::Freq(x, useNA = "always", ord="desc")
 }
 
-#' Get equally-space quantiles for a numeric vector
-#' Used for preliminary descriptive statistics
-#' 
-#' @param x The numeric vector to get the quantiles of
-#' @param int The interval for the quantiles (default is 0.1)
+#' Equally spaced quantiles of a numeric vector
+#'
+#' Returns the quantiles of `x` at evenly spaced probabilities, a quick way to
+#' get a feel for a variable's distribution during preliminary descriptive work.
+#'
+#' @param x The numeric vector to summarise.
+#' @param int Spacing of the probabilities, in `(0, 1]` (default `0.1`, i.e.
+#'   deciles).
+#' @return A named numeric vector of quantiles, as returned by [stats::quantile()].
 #' @export
 descquant <- function(x, int=0.1) {
   quantile(x, probs = seq(0,1,int), na.rm = TRUE)
 }
 
-#' Reports missings and infinity values
-#' 
-#' @param d The vector to check for missings and infinity values
+#' Report missing, NaN and infinite values
+#'
+#' Prints the count and percentage of `NA`, `NaN` and infinite values in a
+#' vector.
+#'
+#' @param d The vector to check.
+#' @return Invisibly `NULL`; called for the side effect of printing.
 #' @export
 descstrange <- function(d) {
   cperc <- function(x) {
@@ -47,9 +62,22 @@ descstrange <- function(d) {
   print(paste0("N. infinity: ", n_inf, " (", cperc(n_inf), "%)"))
 }
 
-#' Find observations dropped from a model
-#' See: https://stackoverflow.com/questions/79759738/get-dataframe-of-observations-dropped-in-estimates/
+#' Return the observations a model dropped through listwise deletion
 #'
+#' Given a fitted model and the data frame it was estimated on, returns the rows
+#' that contain at least one `NA` among the model's variables (those extracted by
+#' [stats::terms()]). These are the observations that `lm()`/`glm()` and friends
+#' silently drop, which is useful for diagnosing why the estimation sample is
+#' smaller than the full data set. See
+#' <https://stackoverflow.com/questions/79759738/get-dataframe-of-observations-dropped-in-estimates/>.
+#'
+#' @param mod A fitted model whose [stats::terms()] expose the model variables.
+#' @param df The data frame the model was estimated on.
+#' @param .keep_vars Which columns to keep in the result: `FALSE` (default) keeps
+#'   only the model variables, `TRUE` keeps all columns of `df`, and a character
+#'   vector keeps the model variables plus the named columns.
+#' @return A data frame of the dropped rows, subset to the columns selected by
+#'   `.keep_vars`.
 #' @export
 get_dropped_obs <- function(mod, df, .keep_vars = FALSE) {
   model_vars <- all.vars(terms(mod))
@@ -87,14 +115,16 @@ get_dropped_obs <- function(mod, df, .keep_vars = FALSE) {
 #'
 #' @return A data frame of the dropped rows (those with at least one `NA` among
 #'   the model variables), subset to the columns selected by `.keep_vars`.
+#' @keywords internal
+#' @noRd
 get_dropped_obs_2 <- function(mod, df, .keep_vars=FALSE) {
   xs <- insight::find_predictors(mod) %>% unlist() %>% as.character()
   ys <- insight::find_response(mod)
   all_vars <- c(xs, ys)
   filtered <- df %>% filter(if_any(all_of(all_vars), ~ is.na(.)))
-  if (.keep_vars == TRUE) {
+  if (isTRUE(.keep_vars)) {
     return(filtered)
-  } else if (.keep_vars == FALSE) {
+  } else if (isFALSE(.keep_vars)) {
     return(filtered %>% select(all_of(all_vars)))
   } else {
     selected_vars <- c(all_vars, .keep_vars)
@@ -102,11 +132,13 @@ get_dropped_obs_2 <- function(mod, df, .keep_vars=FALSE) {
   }
 }
 
-#' Find the number of missings of a variable per group
+#' Count missing values of a variable per group
 #'
-#' @param var The variable to check for missing
-#' @param ... The grouping variables
-#' @return A table with the number and percentage of missing per group
+#' @param df A data frame.
+#' @param var The variable (unquoted) to count missing values of.
+#' @param ... Grouping variables (unquoted), passed to [dplyr::group_by()].
+#' @return A data frame with, per group, the group size `n`, the number of
+#'   missing values `na`, and the proportion missing `p`.
 #' @export
 na_per_group <- function(df, var, ...) {
   df %>%
@@ -114,22 +146,32 @@ na_per_group <- function(df, var, ...) {
     summarise(n = n(), na = sum(is.na({{ var }})), p = na / n)
 }
 
-#' Report duplicates by group
+#' Report duplicated groups
 #'
-#' @param df The dataframe
-#' @param ... The grouping variables
+#' Returns the combinations of the grouping variables that occur more than once
+#' in `df`, together with their counts.
+#'
+#' @param df A data frame (must not already contain a column named `n`).
+#' @param ... Grouping variables (unquoted), passed to [dplyr::count()].
+#' @return A data frame of the duplicated groups and their counts `n`.
+#' @seealso [dupsa()] to assert that there are none.
 #' @export
 dups <- function(df, ...) {
   stopifnot(!("n" %in% colnames(df)))
   df %>%
-    count(...) %>% 
+    count(...) %>%
     filter(n > 1)
 }
 
-#' Assert no duplicates on the basis of a set of grouping variables
+#' Assert that a set of grouping variables uniquely identifies rows
 #'
-#' @param df The dataset to check for duplicates
-#' @param ... The grouping variables
+#' Errors (via [stopifnot()]) if `df` contains any duplicated combination of the
+#' grouping variables. A convenient inline integrity check for pipelines.
+#'
+#' @param df A data frame.
+#' @param ... Grouping variables (unquoted) expected to be unique together.
+#' @return Invisibly `NULL`; called for its side effect of asserting uniqueness.
+#' @seealso [dups()] to inspect the duplicates.
 #' @export
 dupsa <- function(df, ...) {
   stopifnot(

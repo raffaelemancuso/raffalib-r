@@ -14,11 +14,26 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#' Add significance starts to a gtsummary table with a custome formatter for stars
-#' 
-#' Source - https://stackoverflow.com/a/79930130
-#' Posted by PBulls
-#' Retrieved 2026-04-22, License - CC BY-SA 4.0
+#' Add significance stars to a gtsummary table
+#'
+#' A variant of [gtsummary::add_significance_stars()] with a custom star
+#' formatter: it merges the stars into the estimate column (for regression
+#' tables) or the p-value column (otherwise) and adds an explanatory footnote.
+#'
+#' Source: <https://stackoverflow.com/a/79930130> (posted by PBulls, retrieved
+#' 2026-04-22, licensed CC BY-SA 4.0).
+#'
+#' @param x A `gtsummary` table.
+#' @param pattern A glue string selecting which column(s) the stars are merged
+#'   into; defaults to `"{estimate}{stars}"` for regression tables and
+#'   `"{p.value}{stars}"` otherwise.
+#' @param thresholds Named numeric vector mapping star symbols to p-value
+#'   thresholds.
+#' @param hide_ci Whether to hide the confidence-interval column.
+#' @param hide_p Whether to hide the p-value column.
+#' @param hide_se Whether to hide the standard-error column.
+#' @return The `gtsummary` table `x` with a stars column merged in and a
+#'   significance footnote added.
 #' @export
 gtsummary_add_significance_stars <- function(
   x,
@@ -82,7 +97,7 @@ gtsummary_add_significance_stars <- function(
     unlist() |>
     paste(collapse = "; ")
 
-  x <- gtsummary:::modify_footnote_header(
+  x <- gtsummary::modify_footnote_header(
     x,
     footnote = p_footnote,
     columns = any_of(pattern_cols[1]),
@@ -105,7 +120,7 @@ gtsummary_add_significance_stars <- function(
     } |> # styler: off
     rlang::parse_expr()
 
-  x <- gtsummary:::modify_table_body(
+  x <- gtsummary::modify_table_body(
     x,
     ~ .x |> dplyr::mutate(stars = !!expr_stars_case_when)
   )
@@ -116,14 +131,14 @@ gtsummary_add_significance_stars <- function(
     c("conf.low", "p.value", "std.error") %in% names(x$table_body)
   ]
   x <- x |>
-    gtsummary:::modify_table_styling(
+    gtsummary::modify_table_styling(
       columns = tidyselect::all_of(names(cols_to_hide)),
       hide = cols_to_hide
     )
 
   # adding `cols_merge` to table styling ---------------------------------------
   x <- x |>
-    gtsummary:::modify_column_merge(
+    gtsummary::modify_column_merge(
       rows = !is.na(.data$p.value),
       pattern = pattern
     )
@@ -135,10 +150,16 @@ gtsummary_add_significance_stars <- function(
   x
 }
 
-#' Formatter for gtsummary's statistic column
-#' This only makes sense if you call modify_column_unhide("statistic") before,
-#' otherwise the statistic column is hidden by default.
+#' Format the statistic column of a gtsummary table
 #'
+#' Applies a fixed-decimal formatter (with thousands separators) to the
+#' `statistic` column. Only meaningful after the column has been unhidden with
+#' `gtsummary::modify_column_unhide("statistic")`, since `gtsummary` hides it by
+#' default.
+#'
+#' @param table A `gtsummary` table.
+#' @param digits Number of decimal places to display (default 6).
+#' @return The `gtsummary` table with its `statistic` column reformatted.
 #' @export
 gtsummary_format_statistic_column <- function(table, digits = 6) {
   fmt_fnc <- function(x) {
@@ -155,9 +176,23 @@ gtsummary_format_statistic_column <- function(table, digits = 6) {
   return(gtsummary::modify_fmt_fun(table, statistic = fmt_fnc))
 }
 
-#' Compute a column with the differences between the means across two groups in a gtsummary table
-#' See: https://stackoverflow.com/a/79876424/1719931
+#' Compute the between-group difference for a gtsummary variable
 #'
+#' Worker function (in the form expected by [gtsummary::add_stat()]) that returns
+#' the difference between the two groups defined by `by`: a difference in means
+#' for continuous variables, and a difference in proportions (in percentage
+#' points) for categorical and dichotomous variables. Assumes exactly two groups.
+#' See <https://stackoverflow.com/a/79876424/1719931>.
+#'
+#' @param data The data frame underlying the table.
+#' @param variable Name of the variable to summarise.
+#' @param by Name of the two-level grouping variable.
+#' @param tbl The `gtsummary` table being built, used to look up the variable
+#'   type that `gtsummary` assigned.
+#' @param ... Unused; kept for compatibility with the [gtsummary::add_stat()] API.
+#' @return A numeric difference (group 2 minus group 1); percentage points for
+#'   categorical and dichotomous variables.
+#' @seealso [gtsummary_add_mean_diff()]
 #' @export
 gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
   
@@ -196,9 +231,15 @@ gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
   )
 }
 
-#' Add a column with the differences between the means across two groups in a gtsummary table
-#' See: https://stackoverflow.com/a/79876424/1719931
+#' Add a between-group difference column to a gtsummary table
 #'
+#' Adds a column of group differences computed by [gtsummary_mean_diff()] to a
+#' two-group `gtsummary` table, with a suitable header and number format.
+#' See <https://stackoverflow.com/a/79876424/1719931>.
+#'
+#' @param table A two-group `gtsummary` table.
+#' @return The table with an added difference column.
+#' @seealso [gtsummary_mean_diff()]
 #' @export
 gtsummary_add_mean_diff <- function(table) {
   
@@ -211,7 +252,7 @@ gtsummary_add_mean_diff <- function(table) {
       gtsummary::all_dichotomous() ~ "label"
     )
   ) %>%
-    gtsummary::modify_header(add_stat_1 = "**Δ / Δ%**") %>% 
+    gtsummary::modify_header(add_stat_1 = "**Diff / Diff %**") %>%
     gtsummary::modify_fmt_fun(add_stat_1 = gtsummary::label_style_sigfig())
 
   return(x)

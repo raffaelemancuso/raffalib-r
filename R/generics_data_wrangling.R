@@ -16,9 +16,13 @@
 
 # --- DATA WRANGLING --- #
 
-#' Standardize variable
-#' The built-in function returns a matrix, this returns a vector
-#' 
+#' Standardize a variable, returning a vector
+#'
+#' Like [base::scale()] but returns a plain numeric vector instead of a
+#' one-column matrix, which is usually what you want inside [dplyr::mutate()].
+#'
+#' @param var A numeric vector to standardize (centre and scale to unit variance).
+#' @return A numeric vector of the standardized values.
 #' @export
 myscale <- function(var) {
   scale(var)[, 1]
@@ -41,9 +45,13 @@ winsorize <- function(x, q1 = 0.05, q2 = 0.95) {
   ))
 }
 
-#' Convert NaNs to NAs
+#' Convert NaN values to NA in all numeric columns
 #'
-#' @param df The dataset
+#' Replaces `NaN` with `NA` across every numeric column of a data frame
+#' (`class(NaN)` is `"numeric"`, so the two are otherwise easy to confuse).
+#'
+#' @param df A data frame.
+#' @return `df` with `NaN` values in numeric columns replaced by `NA`.
 #' @importFrom dplyr mutate
 #' @importFrom dplyr where
 #' @importFrom dplyr across

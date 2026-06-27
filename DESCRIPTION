@@ -1,11 +1,21 @@
 Package: raffalib
 Version: 0.1
 Date: 2026-05-10
-Title: My Custom Utils
-Description: Custom functions used regularly by me.
-Author: Raffaele Mancuso <raffaele.mancuso4@unibo.it>
-Maintainer: Raffaele Mancuso <raffaele.mancuso4@unibo.it>
+Title: Miscellaneous Utilities for Tables, Plots and Models
+Description: A personal collection of helper functions used regularly by the
+    author for empirical research workflows in R: building publication-ready
+    tables (modelsummary, gtsummary, flextable) and exporting them to Word,
+    saving base R and ggplot2 plots to .docx, descriptive-statistics and
+    data-wrangling shortcuts, list/vector/data-frame utilities, formula
+    manipulation, and a set of helpers around glmmTMB (alternative optimizers
+    and control-function 2SLS).
+Authors@R:
+    person("Raffaele", "Mancuso",
+           email = "raffaele.mancuso4@unibo.it",
+           role = c("aut", "cre"))
 License: GPL-3
+URL: https://github.com/raffaem/raffalib-r
+BugReports: https://github.com/raffaem/raffalib-r/issues
 Imports:
     calibrar,
     cli,
@@ -15,6 +25,7 @@ Imports:
     flextable,
     generics,
     glmmTMB,
+    glue,
     gtools,
     gtsummary,
     insight,
@@ -29,13 +40,17 @@ Imports:
     reformulas,
     rlang,
     rlist,
+    stats,
     stringr,
-    tidyselect
+    tidyselect,
+    utils
 Suggests:
     testthat (>= 3.0.0),
     fixest,
     future,
-    future.apply
+    future.apply,
+    ggplot2
 Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
 Config/roxygen2/version: 8.0.0
 Config/testthat/edition: 3

@@ -14,6 +14,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#' Print a vector one element per line, with indices
+#'
+#' Prints each element of `v` on its own line, prefixed with its position in
+#' `[i]` form. Useful for eyeballing long character vectors at the console.
+#'
+#' @param v A vector.
+#' @return Invisibly `NULL`; called for the side effect of printing.
+#' @examples
+#' catvec(c("alpha", "beta", "gamma"))
 #' @export
 catvec <- function(v) {
   for(i in seq_along(v)) {
@@ -21,8 +30,18 @@ catvec <- function(v) {
   }
 }
 
+#' Turn a vector into a self-named list
+#'
+#' Converts `v` into a list whose names equal its values. Convenient for
+#' `purrr::map()`/`lapply()` loops where you want the results named after the
+#' inputs.
+#'
+#' @param v A vector.
+#' @return A named list, with `names()` equal to the values of `v`.
+#' @examples
+#' as_named_list(c("a", "b", "c"))
 #' @export
-as.named.list <- function(v) {
+as_named_list <- function(v) {
   names(v) <- v
   as.list(v)
 }
@@ -73,6 +92,17 @@ vec_relocate <- function(vect,what,where) {
   }
 }
 
+#' Recode the elements of a vector according to a mapping
+#'
+#' Replaces each element of `vec` that matches a name in `l` with the
+#' corresponding value of `l`; unmatched elements are left unchanged.
+#'
+#' @param vec A vector to recode.
+#' @param l A named mapping list whose names are the old values and whose
+#'   values are the replacements.
+#' @return `vec` with matched elements replaced by their mapping.
+#' @examples
+#' vec_rename(c("a", "b", "c"), list(a = "Apple", c = "Cherry"))
 #' @export
 vec_rename <- function(vec, l) {
   to_rename <- vec %in% names(l)

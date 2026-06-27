@@ -14,6 +14,19 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#' Hessian of a glmmTMB fit at the optimum
+#'
+#' Two ways to compute the Hessian of the negative log-likelihood of a `glmmTMB`
+#' fit with respect to the fixed-effect parameters, evaluated at the best
+#' parameter vector. `glmmTMB_get_hessian_1()` uses [stats::optimHess()] and is
+#' about 2.5x faster than `glmmTMB_get_hessian_2()`, which differentiates the
+#' gradient with [numDeriv::jacobian()]. The two are useful for checking the
+#' curvature / standard errors reported by `glmmTMB`. See
+#' <https://github.com/glmmTMB/glmmTMB/issues/1226#issuecomment-3181703715>.
+#'
+#' @param mod A fitted [glmmTMB::glmmTMB()] model.
+#' @return A numeric Hessian matrix.
+#' @name glmmTMB_get_hessian
 #' @export
 glmmTMB_get_hessian_1 <- function(mod) {
   # See: https://github.com/glmmTMB/glmmTMB/issues/1226#issuecomment-3181703715
@@ -23,6 +36,7 @@ glmmTMB_get_hessian_1 <- function(mod) {
   return(H1)
 }
 
+#' @rdname glmmTMB_get_hessian
 #' @export
 glmmTMB_get_hessian_2 <- function(mod) {
   # See: https://github.com/glmmTMB/glmmTMB/issues/1226#issuecomment-3181703715
@@ -31,9 +45,15 @@ glmmTMB_get_hessian_2 <- function(mod) {
   return(H2)
 }
 
-#' Get current estimated coefficients from a glmmTMB model
+#' Extract the current fixed-effect estimates from a glmmTMB fit
 #'
-#' @return Object to be passed to the `start` argument of `glmmTMB`
+#' Returns the conditional, zero-inflation and dispersion fixed-effect estimates
+#' of a fitted model packaged as a list, ready to pass to the `start` argument of
+#' [glmmTMB::glmmTMB()] to warm-start a refit (e.g. with a different optimizer).
+#'
+#' @param mod A fitted [glmmTMB::glmmTMB()] model.
+#' @return A named list with elements `beta`, `betazi` and `betadisp`, suitable
+#'   for the `start` argument of [glmmTMB::glmmTMB()].
 #' @export
 glmmTMB_get_optimum <- function(mod) {
   # Fixed effects

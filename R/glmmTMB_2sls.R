@@ -294,7 +294,7 @@ glance.glmmTMB_2sls <- function(x, ...) {
     weak.inst = if (!is.null(x$weak_instrument))  x$weak_instrument$p.value  else NA_real_,
     wu.haus   = if (!is.null(x$endogeneity_test)) x$endogeneity_test$p.value else NA_real_,
     link      = link,
-    coef_exp  = if (!is.na(link) && link != "identity") "✅" else "❌",
+    coef_exp  = if (!is.na(link) && link != "identity") "yes" else "no",
     stringsAsFactors = FALSE
   )
 }

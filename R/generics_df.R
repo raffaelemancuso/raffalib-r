@@ -39,8 +39,14 @@ rename_columns_with_labels <- function(df) {
   return(df)
 }
 
-#' Sort columns of a dataframe by labels (natural sorting order)
+#' Sort the columns of a data frame by their labels
 #'
+#' Reorders the columns of `df` by the natural (human) sort order of their
+#' variable labels (as returned by [labelled::get_variable_labels()]).
+#'
+#' @param df A data frame whose columns carry variable labels.
+#' @return `df` with its columns reordered by label.
+#' @seealso [sort_columns_by_name()]
 #' @export
 sort_columns_by_label <- function(df) {
   labels <- as.character(labelled::get_variable_labels(df))
@@ -49,8 +55,14 @@ sort_columns_by_label <- function(df) {
   return(df)
 }
 
-#' Sort columns of a dataframe by names (natural sorting order)
+#' Sort the columns of a data frame by their names
 #'
+#' Reorders the columns of `df` by the natural (human) sort order of their
+#' names, so that e.g. `x10` follows `x2`.
+#'
+#' @param df A data frame.
+#' @return `df` with its columns reordered by name.
+#' @seealso [sort_columns_by_label()]
 #' @export
 sort_columns_by_name <- function(df) {
   cols <- gtools::mixedorder(colnames(df))

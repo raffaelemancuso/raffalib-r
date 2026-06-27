@@ -1,3 +1,34 @@
+# raffalib-r misc helper functions
+# Copyright (C) 2026 Raffaele Mancuso
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# --- CHANGE LOGGING --- #
+
+#' Record a data frame's shape before a pipeline
+#'
+#' Stashes the current dimensions of `df` (and, optionally, a full copy) in
+#' attributes so that a later call to [endlog()] can report how many rows,
+#' columns or cells changed. Designed to bracket a `dplyr` pipeline:
+#' `df |> startlog() |> ... |> endlog()`.
+#'
+#' @param df A data frame.
+#' @param clone If `TRUE`, also store a copy of `df` so that [endlog()] can
+#'   report cell-level changes when the shape is unchanged. Defaults to `FALSE`.
+#' @return `df` unchanged, but carrying the bookkeeping attributes used by
+#'   [endlog()].
+#' @seealso [endlog()]
 #' @export
 startlog <- function(df, clone=FALSE) {
   attr(df, "old_shape") <- dim(df)
@@ -7,6 +38,17 @@ startlog <- function(df, clone=FALSE) {
   return(df)
 }
 
+#' Report how a data frame changed since startlog()
+#'
+#' Consumes the attributes left by [startlog()] and emits a message describing
+#' the change in number of rows and columns. If the shape is unchanged and
+#' `startlog(clone = TRUE)` was used, reports instead the number and percentage
+#' of cells whose value (or missingness) changed. The bookkeeping attributes are
+#' removed from the returned object.
+#'
+#' @param df A data frame previously passed through [startlog()].
+#' @return `df` with the [startlog()] bookkeeping attributes stripped.
+#' @seealso [startlog()]
 #' @export
 endlog <- function(df) {
   old_shape <- attr(df, "old_shape")

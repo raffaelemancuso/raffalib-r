@@ -1,3 +1,12 @@
 ^data-raw$
+^docs$
 ^.*\.Rproj$
 ^\.Rproj\.user$
+^\.claude$
+^\.github$
+^build_manual\.bat$
+^build_site\.bat$
+^document\.bat$
+^install\.bat$
+^raffalib_.*\.pdf$
+^_pkgdown\.yml$
