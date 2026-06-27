@@ -42,22 +42,20 @@ from GitHub will pull them in.
 
 `myfreq()` (frequency table that always shows `NA`s), `descquant()` (evenly
 spaced quantiles), `descstrange()` (counts of `NA`/`NaN`/`Inf`), `na_per_group()`,
-`dups()` / `dupsa()` (find / assert-against duplicate groups), and
+`dupsa()` (assert that grouping variables uniquely identify rows), and
 `get_dropped_obs()` (the rows a model dropped through listwise deletion).
 
 ### Data wrangling
 
-`myscale()` (standardize to a vector, not a matrix), `winsorize()`, `nan2na()`,
-`rename_columns_with_labels()`, `sort_columns_by_label()` /
-`sort_columns_by_name()`, `catcols()` (print matching column names), and
+`nan2na()` (replace `NaN` with `NA` in numeric columns), `sort_columns_by_label()`
+/ `sort_columns_by_name()`, `catcols()` (print matching column names), and
 `startlog()` / `endlog()` to bracket a pipeline and report how many rows,
 columns or cells it changed.
 
 ### Lists and vectors
 
 `list_rename_names()` / `list_rename_values()`, `sort_named_list_by_names()` /
-`sort_named_list_by_values()`, `catvec()`, `as_named_list()`, `vec_relocate()`,
-`vec_rename()`.
+`sort_named_list_by_values()`, `catvec()`, `as_named_list()`, `vec_relocate()`.
 
 ### Formulas
 

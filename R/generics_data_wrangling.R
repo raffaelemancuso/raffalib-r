@@ -16,35 +16,6 @@
 
 # --- DATA WRANGLING --- #
 
-#' Standardize a variable, returning a vector
-#'
-#' Like [base::scale()] but returns a plain numeric vector instead of a
-#' one-column matrix, which is usually what you want inside [dplyr::mutate()].
-#'
-#' @param var A numeric vector to standardize (centre and scale to unit variance).
-#' @return A numeric vector of the standardized values.
-#' @export
-myscale <- function(var) {
-  scale(var)[, 1]
-}
-
-#' Winsorize a variable
-#'
-#' @param x The vector to winsorize
-#' @param q1 Quartile for lowest values
-#' @param q2 Quartile for highest values
-#' @importFrom DescTools Winsorize
-#'
-#' @return The winsorized vector
-#'
-#' @export
-winsorize <- function(x, q1 = 0.05, q2 = 0.95) {
-  return(Winsorize(
-    x,
-    val = quantile(x, probs = c(q1, q2), na.rm = TRUE)
-  ))
-}
-
 #' Convert NaN values to NA in all numeric columns
 #'
 #' Replaces `NaN` with `NA` across every numeric column of a data frame

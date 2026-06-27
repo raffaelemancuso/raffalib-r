@@ -91,21 +91,3 @@ vec_relocate <- function(vect,what,where) {
     return(vect)
   }
 }
-
-#' Recode the elements of a vector according to a mapping
-#'
-#' Replaces each element of `vec` that matches a name in `l` with the
-#' corresponding value of `l`; unmatched elements are left unchanged.
-#'
-#' @param vec A vector to recode.
-#' @param l A named mapping list whose names are the old values and whose
-#'   values are the replacements.
-#' @return `vec` with matched elements replaced by their mapping.
-#' @examples
-#' vec_rename(c("a", "b", "c"), list(a = "Apple", c = "Cherry"))
-#' @export
-vec_rename <- function(vec, l) {
-  to_rename <- vec %in% names(l)
-  vec[to_rename] <- l[vec[to_rename]] %>% unlist()
-  return(vec)
-}

@@ -146,38 +146,22 @@ na_per_group <- function(df, var, ...) {
     summarise(n = n(), na = sum(is.na({{ var }})), p = na / n)
 }
 
-#' Report duplicated groups
-#'
-#' Returns the combinations of the grouping variables that occur more than once
-#' in `df`, together with their counts.
-#'
-#' @param df A data frame (must not already contain a column named `n`).
-#' @param ... Grouping variables (unquoted), passed to [dplyr::count()].
-#' @return A data frame of the duplicated groups and their counts `n`.
-#' @seealso [dupsa()] to assert that there are none.
-#' @export
-dups <- function(df, ...) {
-  stopifnot(!("n" %in% colnames(df)))
-  df %>%
-    count(...) %>%
-    filter(n > 1)
-}
-
 #' Assert that a set of grouping variables uniquely identifies rows
 #'
 #' Errors (via [stopifnot()]) if `df` contains any duplicated combination of the
-#' grouping variables. A convenient inline integrity check for pipelines.
+#' grouping variables. A convenient inline integrity check for pipelines. To
+#' inspect the offending rows instead of asserting, see `janitor::get_dupes()`.
 #'
-#' @param df A data frame.
-#' @param ... Grouping variables (unquoted) expected to be unique together.
+#' @param df A data frame (must not already contain a column named `n`).
+#' @param ... Grouping variables (unquoted) expected to be unique together,
+#'   passed to [dplyr::count()].
 #' @return Invisibly `NULL`; called for its side effect of asserting uniqueness.
-#' @seealso [dups()] to inspect the duplicates.
 #' @export
 dupsa <- function(df, ...) {
-  stopifnot(
-    df %>%
-      dups(...) %>%
-      nrow() ==
-      0
-  )
+  stopifnot(!("n" %in% colnames(df)))
+  n_dup <- df %>%
+    count(...) %>%
+    filter(n > 1) %>%
+    nrow()
+  stopifnot(n_dup == 0)
 }

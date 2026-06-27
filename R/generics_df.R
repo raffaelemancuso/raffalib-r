@@ -16,29 +16,6 @@
 
 # --- DATAFRAME UTILS --- #
 
-#' Rename columns of a dataframe with their labels
-#'
-#' Columns that have no variable label keep their original name.
-#'
-#' @param df A data frame whose columns may carry variable labels.
-#' @return The data frame with columns renamed to their labels (unlabelled
-#'   columns keep their original name).
-#' @export
-rename_columns_with_labels <- function(df) {
-  labels <- labelled::var_label(df)
-  new_names <- vapply(
-    colnames(df),
-    function(n) {
-      lbl <- labels[[n]]
-      if (length(lbl) != 1 || is.na(lbl) || !nzchar(lbl)) n else as.character(lbl)
-    },
-    character(1),
-    USE.NAMES = FALSE
-  )
-  colnames(df) <- new_names
-  return(df)
-}
-
 #' Sort the columns of a data frame by their labels
 #'
 #' Reorders the columns of `df` by the natural (human) sort order of their
