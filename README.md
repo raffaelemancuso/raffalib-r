@@ -84,9 +84,7 @@ columns or cells it changed.
 
 ### Miscellaneous
 
-`find_method()` (which S3 method a generic would dispatch), `gen_batches()`
-(split an index range into chunks), and `save_backup()` / `read_backup()`
-(time-stamped `.rds` snapshots).
+`save_backup()` / `read_backup()` (time-stamped `.rds` snapshots).
 
 ## Examples
 

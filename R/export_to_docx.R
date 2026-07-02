@@ -192,13 +192,15 @@ finalize_docx <- function(outs, outfp) {
 
 #' Save a base R plot to a Word document
 #'
-#' Writes a base R plot (supplied as a plotting expression/function) to a `.docx`
-#' file with an optional caption and controllable page geometry. If `plot_width`
-#' and `plot_height` are both `NULL`, a size that fills the printable area is
-#' guessed.
+#' Writes a base R plot to a `.docx` file with an optional caption and
+#' controllable page geometry. The plot must be captured in an
+#' [officer::plot_instr()] object rather than passed as a bare function or
+#' expression. If `plot_width` and `plot_height` are both `NULL`, a size that
+#' fills the printable area is guessed.
 #'
-#' @param gg A base R plot, as a function or expression that draws the plot
-#'   (passed to [officer::body_add_plot()]).
+#' @param gg The plot to save, as an [officer::plot_instr()] object wrapping the
+#'   plotting code, e.g. `officer::plot_instr(code = plot(x, y))`. Passed as the
+#'   `value` of [officer::body_add_plot()].
 #' @param outfp Output file path for the `.docx` file.
 #' @param plot_style Word paragraph style for the figure (default `"Normal"`).
 #' @param plot_width,plot_height Figure width and height in `plot_unit`. Supply
@@ -210,6 +212,14 @@ finalize_docx <- function(outs, outfp) {
 #' @return Called for its side effect of writing `outfp`; returns the result of
 #'   [prepare_docx()]'s finaliser invisibly.
 #' @seealso [ggplot2docx()], [flextable2docx()]
+#' @examples
+#' \dontrun{
+#' plot2docx(
+#'   officer::plot_instr(code = plot(mtcars$wt, mtcars$mpg)),
+#'   "scatter.docx",
+#'   word_prop = list(caption_text = "Figure 1")
+#' )
+#' }
 #' @export
 plot2docx <- function(
   gg,

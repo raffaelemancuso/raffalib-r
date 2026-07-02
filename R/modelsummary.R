@@ -81,53 +81,87 @@ modelsummary_getgofmap <- function() {
   return(gof_map)
 }
 
-#' Build a labelled coefficient map for modelsummary
+#' Name a list of models by their response-variable labels
 #'
-#' Builds a named map from variable names to their variable labels, expanding
-#' factor variables into one entry per level (`nameLevel` -> `label [level]`).
-#' Variables without a label fall back to their name, so `modelsummary` still
-#' prints them.
+#' Names each element of `mods_list` after the variable label of that model's
+#' response, so that when the list is passed to [modelsummary::modelsummary()]
+#' the column headers read as the (labelled) outcome names. The response of each
+#' model is found with [insight::find_response()] and mapped to its label via
+#' [list_rename_values()]; responses without a label keep their variable name.
 #'
-#' @param df A data frame whose columns carry variable labels.
-#' @param debug If `TRUE`, print progress messages while building the map.
-#' @return A named list to pass to the `coef_map` argument of
-#'   [modelsummary::modelsummary()].
+#' @param mods_list A list of fitted models.
+#' @param df The data frame the models were fit on, whose columns carry variable
+#'   labels.
+#' @return `mods_list`, named by each model's labelled response variable.
 #' @export
-modelsummary_build_labelled_coef_map <- function(df, debug=FALSE) {
-  # Get a named character vector that maps variable names to variable labels
-  #coefmap <- modelsummary::get_variable_labels_models(df)
-  coefmap <- labelled::get_variable_labels(df)
-  # For variables with missing labels, use variable name as label.
-  # Otherwise modelsummary will not print the variable at all.
-  for(n in names(coefmap)) {
-    if(is.null(coefmap[[n]])) {
-      coefmap[[n]] <- n
-      if(debug) {
-        print(paste0("Missing label for variable ", n, ", using variable name."))
-      }
-    }
-  }
-  # Convert factor variables from `nameLevel` into `label [level]`
-  for (var in colnames(df)) {
-    cc <- class(df[[var]])
-    if(length(cc) != 1) {
-      stop("ERROR: Variable ", var, " has multiple classes: ", paste(cc, collapse = ", "))
-    }
-    if (cc == "factor") {
-      if(debug) {
-        print(paste0("Converting factor variable: ", var))
-      }
-      for (lvl in levels(df[[var]])) {
-        varinst_name <- paste0(var, lvl)
-        var_label <- coefmap[[var]]
-        varinst_label <- paste0(var_label, " [", lvl, "]")
-        coefmap[[varinst_name]] <- varinst_label
-        if(debug) {
-          print(paste0(" - Added: ", varinst_name, " -> ", varinst_label))
+modelsummary_name_models_list <- function(mods_list, df) {
+
+  mod_find_reponse <- function(mod) {
+    if(class(mod)[[1]]=="comparisons") {
+      return(attr(mod, "marginaleffects")@variable_names_response)
+    } else {
+      return(tryCatch(
+        insight::find_response(mod),
+        error = function(e) {
+          cli::cli_abort(
+            c(
+              "{.fun insight::find_response} threw an error for a model of class {.cls {class(mod)[[1]]}}.",
+              "x" = conditionMessage(e)
+            ),
+            parent = e
+          )
         }
-      }
+      ))
     }
   }
-  # Return
-  return(coefmap)
+
+  names(mods_list) <- mods_list %>%
+    lapply(mod_find_reponse) %>%
+    unlist() %>%
+    raffalib::list_rename_values(labelled::get_variable_labels(df))
+  return(mods_list)
+}
+
+#' Build a labelled coefficient map from a list of models
+#'
+#' Collects the parameter names across every model in `mods_list`, drops
+#' duplicates, and maps each to its variable label, producing a named list ready
+#' for the `coef_map` argument of [modelsummary::modelsummary()]. Parameters are
+#' extracted with [insight::find_parameters()] and relabelled via
+#' [list_rename_values()]; parameters without a label keep their name.
+#'
+#' @param mods_list A list of fitted models.
+#' @param df The data frame the models were fit on, whose columns carry variable
+#'   labels.
+#' @return A named list mapping each parameter to its variable label, for the
+#'   `coef_map` argument of [modelsummary::modelsummary()].
+#' @export
+modelsummary_build_coef_map <- function(mods_list, df) {
+
+    mod_find_parameters <- function(mod) {
+    if(class(mod)[[1]]=="comparisons") {
+      return(attr(mod, "marginaleffects")@variable_names_predictors)
+    } else {
+      return(tryCatch(
+        insight::find_parameters(mod),
+        error = function(e) {
+          cli::cli_abort(
+            c(
+              "{.fun insight::find_parameters} threw an error for a model of class {.cls {class(mod)[[1]]}}.",
+              "x" = conditionMessage(e)
+            ),
+            parent = e
+          )
+        }
+      ))
+    }
+  }
+
+  coef_map <- mods_list %>%
+    lapply(mod_find_parameters) %>%
+    unlist() %>%
+    unique() %>%
+    raffalib::as_named_list() %>%
+    raffalib::list_rename_values(labelled::get_variable_labels(df))
+  return(coef_map)
 }

@@ -73,23 +73,25 @@ descstrange <- function(d) {
 #'
 #' @param mod A fitted model whose [stats::terms()] expose the model variables.
 #' @param df The data frame the model was estimated on.
-#' @param .keep_vars Which columns to keep in the result: `FALSE` (default) keeps
-#'   only the model variables, `TRUE` keeps all columns of `df`, and a character
-#'   vector keeps the model variables plus the named columns.
-#' @return A data frame of the dropped rows, subset to the columns selected by
-#'   `.keep_vars`.
+#' @param all_model_vars If `TRUE` (default), keep every model variable in the
+#'   result; if `FALSE`, keep only the model variables that actually contain a
+#'   missing value in the dropped rows.
+#' @param other_vars Character vector of additional columns of `df` to append to
+#'   the result.
+#' @return A data frame of the dropped rows, subset to the selected columns.
 #' @export
-get_dropped_obs <- function(mod, df, .keep_vars = FALSE) {
+get_dropped_obs <- function(mod, df, all_model_vars=TRUE, other_vars=c()) {
   model_vars <- all.vars(terms(mod))
-  if (is.character(.keep_vars)) {
-    return(df[!complete.cases(df[model_vars]), c(.keep_vars, model_vars)])
-  } else if (isFALSE(.keep_vars)) {
-    return(df[!complete.cases(df[model_vars]), model_vars])
-  } else if (isTRUE(.keep_vars)) {
-    return(df[!complete.cases(df[model_vars]), ])
+  mask <- !complete.cases(df[model_vars])
+  if(all_model_vars) {
+    cols <- model_vars
   } else {
-    stop("Unknown value for .keep_vars")
+    mask2 <- colSums(is.na(df[mask,model_vars]))>0
+    cols_with_missing <- names(mask2[mask2])
+    cols <- cols_with_missing
   }
+  cols <- c(cols, other_vars)
+  return(df[mask, cols])
 }
 
 #' Return the observations dropped from a fitted model due to missing values
