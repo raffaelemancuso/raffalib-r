@@ -241,6 +241,12 @@ plot2docx <- function(
     )
   }
 
+  if(class(gg)=="tmap") {
+    stop(
+      "Class tmap is unsupported of its own. Please pass officer::plot_instr(print(plt))."
+    )
+  }
+
   # Initialize Word document
   outs <- do.call(prepare_docx, word_prop)
 
@@ -330,6 +336,86 @@ ggplot2docx <- function(
   return(finalize_docx(outs, outfp))
 }
 
+#' Collapse a categorical variable's rows into a single "controlled for" row
+#'
+#' Regression tables (e.g. from [modelsummary::modelsummary()] with
+#' `output = "flextable"`) devote one block of rows (estimate, standard error,
+#' ...) to every level of a categorical variable. This helper replaces all the
+#' blocks belonging to a categorical variable with a single row holding the
+#' variable's label in the term column and `value` (default `"Yes"`) in every
+#' other column — the usual way of indicating that a set of controls or fixed
+#' effects was included. The collapsed row takes the position of the variable's
+#' first block; rows whose term cell is empty (e.g. standard-error rows) are
+#' dropped together with the coefficient row they follow.
+#'
+#' @param tbl A `flextable` whose first column holds the term names.
+#' @param vars Character vector of variable-name prefixes: every body row whose
+#'   term starts with one of these (literal match, no regex), plus its
+#'   empty-term continuation rows, is collapsed. If an element is named, the
+#'   name is used as the displayed label of the collapsed row; otherwise the
+#'   prefix itself is displayed.
+#' @param value Text put in every non-term column of the collapsed row
+#'   (default `"Yes"`).
+#' @return The modified `flextable`.
+#' @seealso [flextable2docx()], which exposes this via its
+#'   `collapse_categorical` argument.
+#' @examples
+#' \dontrun{
+#' mod <- lm(mpg ~ wt + factor(cyl), data = mtcars)
+#' tbl <- modelsummary::modelsummary(mod, output = "flextable")
+#' flextable_collapse_categorical(tbl, c("Cylinders FE" = "factor(cyl)"))
+#' }
+#' @export
+flextable_collapse_categorical <- function(tbl, vars, value = "Yes") {
+  stopifnot(inherits(tbl, "flextable"))
+  labels <- names(vars)
+  if (is.null(labels)) labels <- unname(vars)
+  labels[labels == ""] <- vars[labels == ""]
+  for (k in seq_along(vars)) {
+    tbl <- flextable_collapse_one(tbl, vars[[k]], labels[[k]], value)
+  }
+  return(tbl)
+}
+
+# Collapse the rows of one categorical variable in a flextable body.
+# A "block" is a row whose term matches `var` plus the empty-term rows that
+# follow it (standard errors, confidence intervals, ...). The first block's
+# first row is rewritten to `label` / `value`; every other matched row is
+# deleted. Both the displayed content (via compose) and the underlying
+# dataset are updated, so later operations on the flextable stay consistent.
+flextable_collapse_one <- function(tbl, var, label, value) {
+  col_keys <- tbl$col_keys
+  terms <- trimws(as.character(tbl$body$dataset[[col_keys[1]]]))
+  blank <- is.na(terms) | terms == ""
+  starts <- which(!blank & startsWith(terms, var))
+  if (length(starts) == 0) {
+    warning("No rows matching categorical variable '", var, "' were found.")
+    return(tbl)
+  }
+  rows <- integer(0)
+  for (s in starts) {
+    e <- s
+    while (e < length(terms) && blank[e + 1]) e <- e + 1
+    rows <- c(rows, s:e)
+  }
+  first <- rows[1]
+  tbl <- flextable::compose(tbl, i = first, j = col_keys[1],
+                            value = flextable::as_paragraph(label),
+                            part = "body")
+  tbl$body$dataset[[col_keys[1]]][first] <- label
+  for (ck in col_keys[-1]) {
+    tbl <- flextable::compose(tbl, i = first, j = ck,
+                              value = flextable::as_paragraph(value),
+                              part = "body")
+    tbl$body$dataset[[ck]][first] <- value
+  }
+  drop <- setdiff(rows, first)
+  if (length(drop) > 0) {
+    tbl <- flextable::delete_rows(tbl, i = drop, part = "body")
+  }
+  return(tbl)
+}
+
 #' Save a flextable to a Word document
 #'
 #' Writes a `flextable` (typically a regression or summary table produced by
@@ -345,11 +431,16 @@ ggplot2docx <- function(
 #' @param column_width Optional column width(s) passed to [flextable::width()].
 #' @param layout_autofit If `TRUE` (default) use an autofit layout, otherwise a
 #'   fixed layout.
+#' @param collapse_categorical Optional character vector of variable-name
+#'   prefixes forwarded to [flextable_collapse_categorical()]: the coefficient
+#'   rows of those categorical variables are replaced by a single row with
+#'   `"Yes"` in every column before export. Name the elements to control the
+#'   displayed labels.
 #' @param word_prop A named list of page/caption options forwarded to
 #'   [prepare_docx()] (caption text, paper format, margins, ...).
 #' @return Called for its side effect of writing `outfp`; returns the result of
 #'   [prepare_docx()]'s finaliser invisibly.
-#' @seealso [plot2docx()], [ggplot2docx()]
+#' @seealso [plot2docx()], [ggplot2docx()], [flextable_collapse_categorical()]
 #' @importFrom magrittr %<>%
 #' @export
 flextable2docx <- function(
@@ -361,10 +452,16 @@ flextable2docx <- function(
   padding = NULL,
   column_width = NULL,
   layout_autofit = TRUE,
+  collapse_categorical = NULL,
   word_prop = list()
 ) {
   # Initialize Word document
   outs <- do.call(prepare_docx, word_prop)
+
+  # Collapse categorical-control rows into single "Yes" rows
+  if (!is.null(collapse_categorical)) {
+    tbl <- flextable_collapse_categorical(tbl, collapse_categorical)
+  }
 
   # Define table layout
   layout <- ifelse(layout_autofit, "autofit", "fixed")
