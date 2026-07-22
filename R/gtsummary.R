@@ -190,15 +190,16 @@ gtsummary_format_statistic_column <- function(table, digits = 6) {
 #' @param tbl The `gtsummary` table being built, used to look up the variable
 #'   type that `gtsummary` assigned.
 #' @param ... Unused; kept for compatibility with the [gtsummary::add_stat()] API.
-#' @return A numeric difference (group 2 minus group 1); percentage points for
-#'   categorical and dichotomous variables.
+#' @return A numeric difference (group 2 minus group 1); for categorical and
+#'   dichotomous variables the difference in proportions on the 0-1 scale
+#'   (formatted as a 0%-100% percentage by [gtsummary_add_mean_diff()]).
 #' @seealso [gtsummary_add_mean_diff()]
 #' @export
 gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
-  
+
   x <- data[[variable]]
   g <- data[[by]]
-  
+
   # Query the type that gtsummary actually assigned via tbl$table_body$var_type
   # See: https://stackoverflow.com/a/79935992/1719931
   var_type <- tbl$table_body |>
@@ -209,12 +210,11 @@ gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
   switch(
     var_type,
     categorical = {
-      prop <- table(x, g)
       # margin=1 -> proportions by rows (the sum of a row equals 1)
       # margin=2 -> proportions by columns (the sum of a column equals 1)
-      prop <- prop.table(prop, margin = 2)
+      prop <- prop.table(table(x, g), margin = 2)
       d <- prop[, 2] - prop[, 1]
-      return(d * 100)
+      return(d)
     },
     continuous = {
       return(diff(tapply(x, g, mean, na.rm = TRUE)))
@@ -222,8 +222,19 @@ gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
     dichotomous = {
       prop <- prop.table(table(x, g), margin = 2)
       d <- prop[, 2] - prop[, 1]
-      diffs <- d * 100
-      return(diffs["TRUE"])
+      # the displayed level: gtsummary records it in var_level ("TRUE", "1",
+      # "yes", ...); a hard d["TRUE"] lookup returned NA for 0/1-coded
+      # variables. Fall back to the last level when var_level is absent.
+      lev <- tryCatch(
+        tbl$table_body |>
+          filter(variable == !!variable) |>
+          pull(var_level) |>
+          na.omit() |>
+          first(),
+        error = function(e) NA_character_
+      )
+      if (is.null(lev) || is.na(lev) || !(lev %in% names(d))) lev <- tail(names(d), 1)
+      return(d[lev])
     },
     {
       stop(paste0("ERROR: Unrecognized type ", var_type))
@@ -264,8 +275,9 @@ gtsummary_rename_column <- function(tbl, old, new) {
 #' Adds a column of group differences computed by [gtsummary_mean_diff()] to a
 #' two-group `gtsummary` table, with a suitable header and number format.
 #' The column is named `diff_in_means`. Continuous rows show the difference
-#' in means (sigfig format); categorical and dichotomous rows show the
-#' difference in percentage points with a `%` sign.
+#' in means (sigfig format); categorical and dichotomous rows carry the 0-1
+#' proportion difference from [gtsummary_mean_diff()] and are formatted as
+#' 0%-100% percentages with 2 decimal places (e.g. `15.23%`).
 #' See <https://stackoverflow.com/a/79876424/1719931>.
 #'
 #' @param table A two-group `gtsummary` table.
@@ -290,13 +302,12 @@ gtsummary_add_mean_diff <- function(table) {
       diff_in_means = gtsummary::label_style_sigfig(),
       rows = var_type == "continuous"
     ) %>%
-    # categorical/dichotomous rows: percentage-point differences, % sign
+    # categorical/dichotomous rows: 0-1 proportion differences rendered as
+    # 0%-100% percentages, fixed 2 decimal places (label_style_percent is
+    # not used: it switches to more decimals for values < 1%)
     gtsummary::modify_fmt_fun(
       diff_in_means = function(x) {
-        ifelse(
-          is.na(x), NA_character_,
-          paste0(gtsummary::label_style_sigfig()(x), "%")
-        )
+        ifelse(is.na(x), NA_character_, sprintf("%.2f%%", 100 * x))
       },
       rows = var_type %in% c("categorical", "dichotomous")
     )
