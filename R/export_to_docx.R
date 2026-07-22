@@ -182,12 +182,30 @@ finalize_docx <- function(outs, outfp) {
   # It's necessary to define the same default section than the one you want to end the document
   # so that Word agree to not add a page
   # See: https://stackoverflow.com/a/75451251/1719931
-  outs[["docx"]] %>%
+  doc <- outs[["docx"]] %>%
     officer::body_end_block_section(
       value = officer::block_section(outs[["section_prop"]])
     ) %>%
-    officer::body_set_default_section(outs[["section_prop"]]) %>%
-    print(target = outfp)
+    officer::body_set_default_section(outs[["section_prop"]])
+
+  # If the target is open/locked (e.g. the .docx is open in Word), do NOT abort
+  # a long batch that generates many files: write to a timestamped fallback
+  # next to it, warn naming both paths, and continue.
+  tryCatch(
+    print(doc, target = outfp),
+    error = function(e) {
+      alt <- sub(
+        "\\.docx$",
+        paste0("__locked_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".docx"),
+        outfp
+      )
+      warning(sprintf(
+        "Could not write '%s' (%s). Wrote '%s' instead — close the open file and re-run to overwrite.",
+        outfp, conditionMessage(e), alt
+      ), call. = FALSE)
+      print(doc, target = alt)
+    }
+  )
 }
 
 #' Save a base R plot to a Word document
