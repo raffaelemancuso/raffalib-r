@@ -231,18 +231,49 @@ gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
   )
 }
 
+#' Rename an internal column of a gtsummary table
+#'
+#' Renames a column in the table body AND in every styling reference
+#' (header, fmt_fun, ...). A bare `table_body` rename would orphan the
+#' stylings keyed on the old name, and gtsummary would hide the column.
+#'
+#' @param tbl A `gtsummary` table.
+#' @param old Current column name.
+#' @param new New column name.
+#' @return The table with the column renamed.
+#' @export
+gtsummary_rename_column <- function(tbl, old, new) {
+  stopifnot(old %in% colnames(tbl$table_body))
+  colnames(tbl$table_body)[colnames(tbl$table_body) == old] <- new
+  tbl$table_styling <- lapply(tbl$table_styling, function(el) {
+    if (is.data.frame(el)) {
+      for (cc in intersect(c("column", "columns"), colnames(el))) {
+        if (is.character(el[[cc]])) {
+          el[[cc]][el[[cc]] == old] <- new
+        }
+      }
+    }
+    el
+  })
+  stopifnot(new %in% colnames(tbl$table_body))
+  return(tbl)
+}
+
 #' Add a between-group difference column to a gtsummary table
 #'
 #' Adds a column of group differences computed by [gtsummary_mean_diff()] to a
 #' two-group `gtsummary` table, with a suitable header and number format.
+#' The column is named `diff_in_means`. Continuous rows show the difference
+#' in means (sigfig format); categorical and dichotomous rows show the
+#' difference in percentage points with a `%` sign.
 #' See <https://stackoverflow.com/a/79876424/1719931>.
 #'
 #' @param table A two-group `gtsummary` table.
-#' @return The table with an added difference column.
-#' @seealso [gtsummary_mean_diff()]
+#' @return The table with an added `diff_in_means` column.
+#' @seealso [gtsummary_mean_diff()], [gtsummary_rename_column()]
 #' @export
 gtsummary_add_mean_diff <- function(table) {
-  
+
   x <- gtsummary::add_stat(
     table,
     fns = gtsummary::everything() ~ gtsummary_mean_diff,
@@ -252,8 +283,23 @@ gtsummary_add_mean_diff <- function(table) {
       gtsummary::all_dichotomous() ~ "label"
     )
   ) %>%
-    gtsummary::modify_header(add_stat_1 = "**Diff / Diff %**") %>%
-    gtsummary::modify_fmt_fun(add_stat_1 = gtsummary::label_style_sigfig())
+    gtsummary_rename_column("add_stat_1", "diff_in_means") %>%
+    gtsummary::modify_header(diff_in_means = "**Diff / Diff %**") %>%
+    # continuous rows: difference in means, plain sigfig
+    gtsummary::modify_fmt_fun(
+      diff_in_means = gtsummary::label_style_sigfig(),
+      rows = var_type == "continuous"
+    ) %>%
+    # categorical/dichotomous rows: percentage-point differences, % sign
+    gtsummary::modify_fmt_fun(
+      diff_in_means = function(x) {
+        ifelse(
+          is.na(x), NA_character_,
+          paste0(gtsummary::label_style_sigfig()(x), "%")
+        )
+      },
+      rows = var_type %in% c("categorical", "dichotomous")
+    )
 
   return(x)
 }
