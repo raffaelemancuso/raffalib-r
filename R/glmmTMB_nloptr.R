@@ -26,13 +26,14 @@
 #' constructor rather than calling this directly.
 #'
 #' The gradient is passed to nloptr only for derivative-based algorithms
-#' (`NLOPT_LD_*` / `NLOPT_GD_*`); derivative-free ones (`NLOPT_LN_*` /
-#' `NLOPT_GN_*`) ignore it. Global (`_GN_`/`_GD_`) algorithms require FINITE
-#' box constraints, which `glmmTMB` does not supply (its transformed parameters
-#' are unconstrained), and the AUGLAG / MLSL meta-algorithms require a
-#' subsidiary local optimizer via `opts$local_opts`; these therefore need extra
-#' setup and are included for completeness. Derivative-free LOCAL algorithms
-#' (e.g. BOBYQA) are the recommended fallback for a stalling default optimizer.
+#' (`NLOPT_LD_*`); derivative-free ones (`NLOPT_LN_*`) ignore it.
+#'
+#' @section Only glmmTMB-compatible algorithms are exposed:
+#' raffalib provides constructors **only for NLopt's LOCAL algorithms**
+#' (`NLOPT_LN_*` derivative-free and `NLOPT_LD_*` derivative-based). NLopt's
+#' other algorithm classes are deliberately omitted because they cannot optimize
+#' a `glmmTMB` likelihood as `glmmTMB` calls the optimizer — see
+#' [glmmTMB_control_nloptr_methods] for the full rationale.
 #'
 #' @param par Starting parameter vector.
 #' @param fn Objective function (returns a scalar).
@@ -77,8 +78,7 @@ glmmTMB_nloptr_optim <- function(par, fn, gr = NULL, lower = -Inf, upper = Inf,
   # nloptr status > 0 signals success: 1 SUCCESS, 2 STOPVAL, 3 FTOL, 4 XTOL
   # (5 MAXEVAL / 6 MAXTIME are stops; negatives are errors). glmmTMB wants 0.
   conv <- if (ret$status %in% 1:4) 0L else 1L
-  cat(paste0("nloptr status: ", ret$status, " (", ret$message, ")
-"))
+  cat(paste0("nloptr status: ", ret$status, " (", ret$message, ")\n"))
   list(
     par = ret$solution,
     objective = ret$objective,
@@ -108,62 +108,62 @@ glmmTMB_control_nloptr <- function(algorithm = "NLOPT_LN_BOBYQA",
 
 #' glmmTMB control objects using nloptr optimizers
 #'
-#' A convenience constructor for every NLopt algorithm exposed by
-#' [nloptr::nloptr()]: each builds a [glmmTMB::glmmTMBControl()] object telling
-#' `glmmTMB` to optimize the likelihood with the named algorithm instead of the
+#' A convenience constructor for each NLopt **local** algorithm that can
+#' optimize a `glmmTMB` likelihood: each builds a [glmmTMB::glmmTMBControl()]
+#' object telling `glmmTMB` to optimize with the named algorithm instead of the
 #' default `nlminb()`. Useful when the default optimizer stalls, or to
 #' cross-check the optimum. Derivative-free LOCAL algorithms (`_LN_`, e.g.
-#' BOBYQA) are the recommended first fallback. See [glmmTMB_nloptr_optim()] for
-#' the caveats on the global (`_GN_`/`_GD_`) and meta (AUGLAG/MLSL) algorithms.
+#' BOBYQA) are the recommended first fallback; derivative-based LOCAL algorithms
+#' (`_LD_`) exploit glmmTMB's exact analytic TMB gradient.
+#'
+#' @section Algorithm classes intentionally NOT provided:
+#' NLopt exposes ~37 algorithms, but only the **local** ones are wrapped here.
+#' The others are omitted because they cannot work the way `glmmTMB` invokes an
+#' optimizer, so exposing them would only offer constructors that always fail:
+#' \itemize{
+#'   \item **Global algorithms** (`NLOPT_GN_*`, `NLOPT_GD_*` — DIRECT, CRS,
+#'     StoGO, ISRES, ESCH, and the MLSL drivers) require **finite** lower/upper
+#'     bounds on every parameter. `glmmTMB` optimizes on an unconstrained,
+#'     transformed scale and passes `lower = -Inf`, `upper = Inf`, so nloptr
+#'     errors before it can start.
+#'   \item **AUGLAG / MLSL meta-algorithms** (`NLOPT_LN_AUGLAG`,
+#'     `NLOPT_LD_AUGLAG`, `*_AUGLAG_EQ`, `NLOPT_G*_MLSL*`) are not standalone:
+#'     they require a subsidiary local optimizer supplied via `opts$local_opts`,
+#'     which the plain `glmmTMB` control interface does not set. Without it
+#'     nloptr aborts.
+#' }
+#' If you genuinely need one of these (e.g. a bounded global search), call
+#' [glmmTMB_control_nloptr()] directly with the appropriate `opts` (finite
+#' `lb`/`ub`, or a `local_opts` list).
 #'
 #' Each function selects the NLopt algorithm named in its suffix:
 #' \describe{
-#'   \item{`glmmTMB_control_nloptr_gn_direct`}{`NLOPT_GN_DIRECT`}
-#'   \item{`glmmTMB_control_nloptr_gn_direct_l`}{`NLOPT_GN_DIRECT_L`}
-#'   \item{`glmmTMB_control_nloptr_gn_direct_l_rand`}{`NLOPT_GN_DIRECT_L_RAND`}
-#'   \item{`glmmTMB_control_nloptr_gn_direct_noscal`}{`NLOPT_GN_DIRECT_NOSCAL`}
-#'   \item{`glmmTMB_control_nloptr_gn_direct_l_noscal`}{`NLOPT_GN_DIRECT_L_NOSCAL`}
-#'   \item{`glmmTMB_control_nloptr_gn_direct_l_rand_noscal`}{`NLOPT_GN_DIRECT_L_RAND_NOSCAL`}
-#'   \item{`glmmTMB_control_nloptr_gn_orig_direct`}{`NLOPT_GN_ORIG_DIRECT`}
-#'   \item{`glmmTMB_control_nloptr_gn_orig_direct_l`}{`NLOPT_GN_ORIG_DIRECT_L`}
-#'   \item{`glmmTMB_control_nloptr_gd_stogo`}{`NLOPT_GD_STOGO`}
-#'   \item{`glmmTMB_control_nloptr_gd_stogo_rand`}{`NLOPT_GD_STOGO_RAND`}
-#'   \item{`glmmTMB_control_nloptr_ld_slsqp`}{`NLOPT_LD_SLSQP`}
-#'   \item{`glmmTMB_control_nloptr_ld_lbfgs`}{`NLOPT_LD_LBFGS`}
+#'   \item{`glmmTMB_control_nloptr_ln_bobyqa`}{`NLOPT_LN_BOBYQA`}
+#'   \item{`glmmTMB_control_nloptr_ln_cobyla`}{`NLOPT_LN_COBYLA`}
+#'   \item{`glmmTMB_control_nloptr_ln_newuoa`}{`NLOPT_LN_NEWUOA`}
+#'   \item{`glmmTMB_control_nloptr_ln_newuoa_bound`}{`NLOPT_LN_NEWUOA_BOUND`}
+#'   \item{`glmmTMB_control_nloptr_ln_neldermead`}{`NLOPT_LN_NELDERMEAD`}
+#'   \item{`glmmTMB_control_nloptr_ln_sbplx`}{`NLOPT_LN_SBPLX`}
 #'   \item{`glmmTMB_control_nloptr_ln_praxis`}{`NLOPT_LN_PRAXIS`}
+#'   \item{`glmmTMB_control_nloptr_ld_lbfgs`}{`NLOPT_LD_LBFGS`}
+#'   \item{`glmmTMB_control_nloptr_ld_slsqp`}{`NLOPT_LD_SLSQP`}
+#'   \item{`glmmTMB_control_nloptr_ld_mma`}{`NLOPT_LD_MMA`}
+#'   \item{`glmmTMB_control_nloptr_ld_ccsaq`}{`NLOPT_LD_CCSAQ`}
 #'   \item{`glmmTMB_control_nloptr_ld_var1`}{`NLOPT_LD_VAR1`}
 #'   \item{`glmmTMB_control_nloptr_ld_var2`}{`NLOPT_LD_VAR2`}
 #'   \item{`glmmTMB_control_nloptr_ld_tnewton`}{`NLOPT_LD_TNEWTON`}
 #'   \item{`glmmTMB_control_nloptr_ld_tnewton_restart`}{`NLOPT_LD_TNEWTON_RESTART`}
 #'   \item{`glmmTMB_control_nloptr_ld_tnewton_precond`}{`NLOPT_LD_TNEWTON_PRECOND`}
 #'   \item{`glmmTMB_control_nloptr_ld_tnewton_precond_restart`}{`NLOPT_LD_TNEWTON_PRECOND_RESTART`}
-#'   \item{`glmmTMB_control_nloptr_gn_crs2_lm`}{`NLOPT_GN_CRS2_LM`}
-#'   \item{`glmmTMB_control_nloptr_gn_mlsl`}{`NLOPT_GN_MLSL`}
-#'   \item{`glmmTMB_control_nloptr_gd_mlsl`}{`NLOPT_GD_MLSL`}
-#'   \item{`glmmTMB_control_nloptr_gn_mlsl_lds`}{`NLOPT_GN_MLSL_LDS`}
-#'   \item{`glmmTMB_control_nloptr_gd_mlsl_lds`}{`NLOPT_GD_MLSL_LDS`}
-#'   \item{`glmmTMB_control_nloptr_ld_mma`}{`NLOPT_LD_MMA`}
-#'   \item{`glmmTMB_control_nloptr_ld_ccsaq`}{`NLOPT_LD_CCSAQ`}
-#'   \item{`glmmTMB_control_nloptr_ln_cobyla`}{`NLOPT_LN_COBYLA`}
-#'   \item{`glmmTMB_control_nloptr_ln_newuoa`}{`NLOPT_LN_NEWUOA`}
-#'   \item{`glmmTMB_control_nloptr_ln_newuoa_bound`}{`NLOPT_LN_NEWUOA_BOUND`}
-#'   \item{`glmmTMB_control_nloptr_ln_neldermead`}{`NLOPT_LN_NELDERMEAD`}
-#'   \item{`glmmTMB_control_nloptr_ln_sbplx`}{`NLOPT_LN_SBPLX`}
-#'   \item{`glmmTMB_control_nloptr_ln_auglag`}{`NLOPT_LN_AUGLAG`}
-#'   \item{`glmmTMB_control_nloptr_ld_auglag`}{`NLOPT_LD_AUGLAG`}
-#'   \item{`glmmTMB_control_nloptr_ln_auglag_eq`}{`NLOPT_LN_AUGLAG_EQ`}
-#'   \item{`glmmTMB_control_nloptr_ld_auglag_eq`}{`NLOPT_LD_AUGLAG_EQ`}
-#'   \item{`glmmTMB_control_nloptr_ln_bobyqa`}{`NLOPT_LN_BOBYQA`}
-#'   \item{`glmmTMB_control_nloptr_gn_isres`}{`NLOPT_GN_ISRES`}
 #' }
 #'
 #' @param opts A named list of nloptr `opts` (e.g. `maxeval`, `xtol_rel`,
-#'   `ftol_rel`, or `local_opts` for AUGLAG/MLSL), merged over the algorithm
-#'   selection and defaults.
+#'   `ftol_rel`), merged over the algorithm selection and defaults.
 #' @param optArgs A named list of extra arguments for the optimizer function.
 #' @return A `glmmTMBControl` object for the `control` argument of
 #'   [glmmTMB::glmmTMB()].
-#' @seealso [glmmTMB_control_calibrar_methods], [glmmTMB_control_optimparallel()].
+#' @seealso [glmmTMB_control_minqa_methods], [glmmTMB_control_optimx_methods],
+#'   [glmmTMB_control_lbfgsb3c()].
 #' @name glmmTMB_control_nloptr_methods
 #' @examples
 #' \dontrun{
@@ -175,64 +175,56 @@ glmmTMB_control_nloptr <- function(algorithm = "NLOPT_LN_BOBYQA",
 #' }
 NULL
 
+# ---- LOCAL derivative-free (NLOPT_LN_*) ----
+
 #' @rdname glmmTMB_control_nloptr_methods
 #' @export
-glmmTMB_control_nloptr_gn_direct <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_DIRECT", opts = opts, optArgs = optArgs)
+glmmTMB_control_nloptr_ln_bobyqa <- function(opts = list(), optArgs = list()) {
+  glmmTMB_control_nloptr("NLOPT_LN_BOBYQA", opts = opts, optArgs = optArgs)
 }
 
 #' @rdname glmmTMB_control_nloptr_methods
 #' @export
-glmmTMB_control_nloptr_gn_direct_l <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_DIRECT_L", opts = opts, optArgs = optArgs)
+glmmTMB_control_nloptr_ln_cobyla <- function(opts = list(), optArgs = list()) {
+  glmmTMB_control_nloptr("NLOPT_LN_COBYLA", opts = opts, optArgs = optArgs)
 }
 
 #' @rdname glmmTMB_control_nloptr_methods
 #' @export
-glmmTMB_control_nloptr_gn_direct_l_rand <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_DIRECT_L_RAND", opts = opts, optArgs = optArgs)
+glmmTMB_control_nloptr_ln_newuoa <- function(opts = list(), optArgs = list()) {
+  glmmTMB_control_nloptr("NLOPT_LN_NEWUOA", opts = opts, optArgs = optArgs)
 }
 
 #' @rdname glmmTMB_control_nloptr_methods
 #' @export
-glmmTMB_control_nloptr_gn_direct_noscal <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_DIRECT_NOSCAL", opts = opts, optArgs = optArgs)
+glmmTMB_control_nloptr_ln_newuoa_bound <- function(opts = list(), optArgs = list()) {
+  glmmTMB_control_nloptr("NLOPT_LN_NEWUOA_BOUND", opts = opts, optArgs = optArgs)
 }
 
 #' @rdname glmmTMB_control_nloptr_methods
 #' @export
-glmmTMB_control_nloptr_gn_direct_l_noscal <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_DIRECT_L_NOSCAL", opts = opts, optArgs = optArgs)
+glmmTMB_control_nloptr_ln_neldermead <- function(opts = list(), optArgs = list()) {
+  glmmTMB_control_nloptr("NLOPT_LN_NELDERMEAD", opts = opts, optArgs = optArgs)
 }
 
 #' @rdname glmmTMB_control_nloptr_methods
 #' @export
-glmmTMB_control_nloptr_gn_direct_l_rand_noscal <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_DIRECT_L_RAND_NOSCAL", opts = opts, optArgs = optArgs)
+glmmTMB_control_nloptr_ln_sbplx <- function(opts = list(), optArgs = list()) {
+  glmmTMB_control_nloptr("NLOPT_LN_SBPLX", opts = opts, optArgs = optArgs)
 }
 
 #' @rdname glmmTMB_control_nloptr_methods
 #' @export
-glmmTMB_control_nloptr_gn_orig_direct <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_ORIG_DIRECT", opts = opts, optArgs = optArgs)
+glmmTMB_control_nloptr_ln_praxis <- function(opts = list(), optArgs = list()) {
+  glmmTMB_control_nloptr("NLOPT_LN_PRAXIS", opts = opts, optArgs = optArgs)
 }
+
+# ---- LOCAL derivative-based (NLOPT_LD_*) ----
 
 #' @rdname glmmTMB_control_nloptr_methods
 #' @export
-glmmTMB_control_nloptr_gn_orig_direct_l <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_ORIG_DIRECT_L", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_gd_stogo <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GD_STOGO", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_gd_stogo_rand <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GD_STOGO_RAND", opts = opts, optArgs = optArgs)
+glmmTMB_control_nloptr_ld_lbfgs <- function(opts = list(), optArgs = list()) {
+  glmmTMB_control_nloptr("NLOPT_LD_LBFGS", opts = opts, optArgs = optArgs)
 }
 
 #' @rdname glmmTMB_control_nloptr_methods
@@ -243,14 +235,14 @@ glmmTMB_control_nloptr_ld_slsqp <- function(opts = list(), optArgs = list()) {
 
 #' @rdname glmmTMB_control_nloptr_methods
 #' @export
-glmmTMB_control_nloptr_ld_lbfgs <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LD_LBFGS", opts = opts, optArgs = optArgs)
+glmmTMB_control_nloptr_ld_mma <- function(opts = list(), optArgs = list()) {
+  glmmTMB_control_nloptr("NLOPT_LD_MMA", opts = opts, optArgs = optArgs)
 }
 
 #' @rdname glmmTMB_control_nloptr_methods
 #' @export
-glmmTMB_control_nloptr_ln_praxis <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LN_PRAXIS", opts = opts, optArgs = optArgs)
+glmmTMB_control_nloptr_ld_ccsaq <- function(opts = list(), optArgs = list()) {
+  glmmTMB_control_nloptr("NLOPT_LD_CCSAQ", opts = opts, optArgs = optArgs)
 }
 
 #' @rdname glmmTMB_control_nloptr_methods
@@ -287,112 +279,4 @@ glmmTMB_control_nloptr_ld_tnewton_precond <- function(opts = list(), optArgs = l
 #' @export
 glmmTMB_control_nloptr_ld_tnewton_precond_restart <- function(opts = list(), optArgs = list()) {
   glmmTMB_control_nloptr("NLOPT_LD_TNEWTON_PRECOND_RESTART", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_gn_crs2_lm <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_CRS2_LM", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_gn_mlsl <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_MLSL", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_gd_mlsl <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GD_MLSL", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_gn_mlsl_lds <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_MLSL_LDS", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_gd_mlsl_lds <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GD_MLSL_LDS", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ld_mma <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LD_MMA", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ld_ccsaq <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LD_CCSAQ", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ln_cobyla <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LN_COBYLA", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ln_newuoa <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LN_NEWUOA", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ln_newuoa_bound <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LN_NEWUOA_BOUND", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ln_neldermead <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LN_NELDERMEAD", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ln_sbplx <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LN_SBPLX", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ln_auglag <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LN_AUGLAG", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ld_auglag <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LD_AUGLAG", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ln_auglag_eq <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LN_AUGLAG_EQ", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ld_auglag_eq <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LD_AUGLAG_EQ", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_ln_bobyqa <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_LN_BOBYQA", opts = opts, optArgs = optArgs)
-}
-
-#' @rdname glmmTMB_control_nloptr_methods
-#' @export
-glmmTMB_control_nloptr_gn_isres <- function(opts = list(), optArgs = list()) {
-  glmmTMB_control_nloptr("NLOPT_GN_ISRES", opts = opts, optArgs = optArgs)
 }
