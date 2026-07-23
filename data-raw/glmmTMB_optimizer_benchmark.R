@@ -54,7 +54,8 @@ out_xlsx   <- file.path(script_dir, "glmmTMB_optimizer_benchmark.xlsx")
 # solvers + every optimx allmeth method). Install any that are not installed.
 method_pkgs <- c("optimx", "lbfgsb3c", "BB", "ucminf", "minqa", "dfoptim",
                  "lbfgs", "subplex", "marqLevAlg", "nloptr", "pracma",
-                 "cmaes", "DEoptim", "GenSA", "pso", "rgenoud", "soma")
+                 "cmaes", "DEoptim", "GenSA", "pso", "rgenoud", "soma",
+                 "optimParallel")
 missing_pkgs <- method_pkgs[!vapply(method_pkgs, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing_pkgs)) {
   message("Installing missing optimizer backends: ", paste(missing_pkgs, collapse = ", "))
@@ -88,7 +89,9 @@ form <- y ~ x1 + x2 + x3 + (1 | grp)
 R <- asNamespace("raffalib")
 ctrl_names <- c("__native__",
                 sort(grep("^glmmTMB_control_calibrar_", ls(R), value = TRUE)),
-                sort(grep("^glmmTMB_control_optimx_",   ls(R), value = TRUE))
+                sort(grep("^glmmTMB_control_optimx_",   ls(R), value = TRUE)),
+                sort(grep("^glmmTMB_control_nloptr_",   ls(R), value = TRUE)),
+                sort(grep("^glmmTMB_control_optimparallel$", ls(R), value = TRUE))
                 #sort(grep("^glmmTMB_control_optimh_",   ls(R), value = TRUE))
               )
 
@@ -138,12 +141,15 @@ environment(fit_in_worker) <- baseenv()
 run_one <- function(fn_name) {
   is_base <- identical(fn_name, "__native__")
   family  <- if (is_base) "native"
-             else if (grepl("_calibrar_", fn_name)) "calibrar"
-             else if (grepl("_optimx_",   fn_name)) "optimx"
-             else if (grepl("_optimh_",   fn_name)) "optimh" else "?"
+             else if (grepl("_calibrar_",      fn_name)) "calibrar"
+             else if (grepl("_optimx_",        fn_name)) "optimx"
+             else if (grepl("_nloptr_",        fn_name)) "nloptr"
+             else if (grepl("_optimparallel$", fn_name)) "optimparallel"
+             else if (grepl("_optimh_",        fn_name)) "optimh" else "?"
   control <- if (is_base) "glmmTMB default (nlminb)" else fn_name
   method  <- if (is_base) "nlminb (native)"
-             else sub("^glmmTMB_control_(calibrar|optimx|optimh)_", "", fn_name)
+             else if (grepl("_optimparallel$", fn_name)) "L-BFGS-B (parallel)"
+             else sub("^glmmTMB_control_(calibrar|optimx|optimh|nloptr)_", "", fn_name)
   row <- data.frame(family = family, control = control, method = method, converged = FALSE,
                     time_s = NA_real_, logLik = NA_real_, AIC = NA_real_,
                     max_grad = NA_real_, note = "", error = "", stringsAsFactors = FALSE)
@@ -207,7 +213,7 @@ expo <- function(x)   ifelse(is.na(x), "—", formatC(x, format = "e", digits = 
 tick <- function(b)   ifelse(isTRUE(b), "yes", "no")
 
 md <- c(
-  "# glmmTMB optimizer-control benchmark (calibrar + optimx)",
+  "# glmmTMB optimizer-control benchmark (calibrar + optimx + nloptr + optimParallel)",
   "",
   sprintf("- **Model:** `%s`, family negative binomial (`nbinom2`)", deparse(form)),
   sprintf("- **Data:** simulated, N = %d, %d random-intercept groups (seed = %d)", N, G, seed),
@@ -231,12 +237,18 @@ for (i in seq_len(nrow(bench))) {
     b$family, b$control, b$method, tick(b$converged), num(b$time_s, 2),
     expo(b$dLogLik), sci(b$max_grad), paste(coef_cells, collapse = " | "), b$note))
 }
+fam_summary <- function(fam) {
+  n <- sum(bench$family == fam)
+  if (n == 0L) return(NULL)
+  sprintf("%s %d/%d", fam, sum(bench$converged & bench$family == fam), n)
+}
 md <- c(md, "",
-        sprintf("_%d/%d converged (calibrar %d/%d, optimx %d/%d, optimh %d/%d). Fastest converged: %s._",
+        sprintf("_%d/%d converged (%s). Fastest converged: %s._",
                 sum(bench$converged), nrow(bench),
-                sum(bench$converged & bench$family == "calibrar"), sum(bench$family == "calibrar"),
-                sum(bench$converged & bench$family == "optimx"),   sum(bench$family == "optimx"),
-                sum(bench$converged & bench$family == "optimh"),   sum(bench$family == "optimh"),
+                paste(Filter(Negate(is.null),
+                             lapply(c("calibrar", "optimx", "nloptr", "optimparallel", "optimh"),
+                                    fam_summary)),
+                      collapse = ", "),
                 { ok <- bench[bench$converged, ]; if (nrow(ok)) ok$method[which.min(ok$time_s)] else "none" }))
 
 ## full error messages for any method that errored
