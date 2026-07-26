@@ -44,7 +44,9 @@
 #' @export
 glmmTMB_lbfgsb3c_optim <- function(par, fn, gr = NULL, lower = -Inf,
                                    upper = Inf, control = list(), ...) {
-  myinfo("lbfgsb3c optimization")
+  # base print(), not myinfo(): serialized to workers by fit_glmmTMB_parallel(),
+  # which does not load raffalib there (only base / pkg::fun survive the trip).
+  print("lbfgsb3c optimization")
   if (is.null(control$trace)) control$trace <- 0L
 
   # glmmTMB's objective/gradient (TMB's obj$fn/obj$gr) carry `...` in their

@@ -46,7 +46,9 @@
 #' @export
 glmmTMB_minqa_optim <- function(par, fn, gr = NULL, lower = -Inf, upper = Inf,
                                 control = list(), method = "bobyqa", ...) {
-  myinfo("minqa optimization")
+  # base print(), not myinfo(): serialized to workers by fit_glmmTMB_parallel(),
+  # which does not load raffalib there (only base / pkg::fun survive the trip).
+  print("minqa optimization")
   if (is.null(control$iprint)) control$iprint <- 0L
   # minqa derives rhobeg = 0.2 * max(abs(par)); glmmTMB starts every parameter
   # at 0, so that collapses to 0 and rhoend = 1e-6*rhobeg = 0 fails minqa's

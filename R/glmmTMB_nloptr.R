@@ -47,7 +47,9 @@
 #' @export
 glmmTMB_nloptr_optim <- function(par, fn, gr = NULL, lower = -Inf, upper = Inf,
                                  control = list(), ...) {
-  myinfo("nloptr optimization")
+  # base print(), not myinfo(): serialized to workers by fit_glmmTMB_parallel(),
+  # which does not load raffalib there (only base / pkg::fun survive the trip).
+  print("nloptr optimization")
   algorithm <- if (!is.null(control$algorithm)) control$algorithm else "NLOPT_LN_BOBYQA"
   needs_grad <- grepl("_(LD|GD)_", algorithm)
 
@@ -78,7 +80,7 @@ glmmTMB_nloptr_optim <- function(par, fn, gr = NULL, lower = -Inf, upper = Inf,
   # nloptr status > 0 signals success: 1 SUCCESS, 2 STOPVAL, 3 FTOL, 4 XTOL
   # (5 MAXEVAL / 6 MAXTIME are stops; negatives are errors). glmmTMB wants 0.
   conv <- if (ret$status %in% 1:4) 0L else 1L
-  myinfo("nloptr status:", paste0(ret$status, " (", ret$message, ")"))
+  print(paste0("nloptr status: ", ret$status, " (", ret$message, ")"))
   list(
     par = ret$solution,
     objective = ret$objective,

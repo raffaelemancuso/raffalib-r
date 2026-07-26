@@ -18,7 +18,9 @@
 
 # Function to pass to the `optimizer` argument of glmmTMB::glmmTMBControl
 glmmTMB_calibrar_optimizer <- function(par, fn, gr = NULL, ..., control = list()) {
-  myinfo("calibrar optimization")
+  # base print(), not myinfo(): serialized to workers by fit_glmmTMB_parallel(),
+  # which does not load raffalib there (only base / pkg::fun survive the trip).
+  print("calibrar optimization")
   #print("[glmmTMB_calibrar_optimizer] control:")
   #print(control)
   # No worker cluster is built here. calibrar consults `parallel` only for its
@@ -39,8 +41,8 @@ glmmTMB_calibrar_optimizer <- function(par, fn, gr = NULL, ..., control = list()
   # debug
   # convergence: An integer code. 0 indicates successful completion.
   convergence = ret$convergence == 0
-  myinfo("calibrar convergence:", convergence)
-  myinfo("calibrar message:", ret$message)
+  print(paste("calibrar convergence:", convergence))
+  print(paste("calibrar message:", ret$message))
   # glmmTMB automatically handles output from optim() if we rename the value component to objective
   mask <- names(ret) == "value"
   names(ret)[mask] <- "objective"

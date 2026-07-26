@@ -29,7 +29,9 @@
 #'   renamed to `objective`.
 #' @export
 glmmTMB_optimx_optim <- function(...) {
-  myinfo("optimx optimization")
+  # base print(), not myinfo(): serialized to workers by fit_glmmTMB_parallel(),
+  # which does not load raffalib there (only base / pkg::fun survive the trip).
+  print("optimx optimization")
   ret <- optimx::optimr(...)
   # glmmTMB automatically handles output from optim(), by renaming the value component to objective
   mask <- names(ret) == "value"

@@ -1,13 +1,41 @@
 # Tests for fit_glmmTMB_parallel() in R/glmmTMB_parallel.R.
 #
 # fit_glmmTMB_parallel() serializes each spec -- and with it any raffalib
-# control/optimizer object -- to the workers. raffalib's optimizer functions
-# call raffalib helpers (e.g. myinfo()), which resolve only inside the raffalib
-# namespace, so the workers must be able to load raffalib. These tests are the
-# regression guard for the workers failing with "could not find function".
+# control/optimizer object -- to workers that do not load raffalib. Optimizer
+# bodies must therefore call only base functions and fully-qualified pkg::fun;
+# an unqualified raffalib helper (e.g. myinfo()) dies on the worker with
+# "could not find function". These tests are the regression guard for that.
 #
-# They fit real (small) models on a cluster, so they are slower than the rest of
-# the suite.
+# Most of them fit real (small) models on a cluster, so they are slower than the
+# rest of the suite.
+
+# Fast, precise guard: names the offending function without spawning a cluster.
+test_that("optimizer functions reference no raffalib objects (worker-safe)", {
+  skip_if_not_installed("codetools")
+
+  optimizers <- list(
+    glmmTMB_nloptr_optim       = glmmTMB_nloptr_optim,
+    glmmTMB_minqa_optim        = glmmTMB_minqa_optim,
+    glmmTMB_lbfgsb3c_optim     = glmmTMB_lbfgsb3c_optim,
+    glmmTMB_optimx_optim       = glmmTMB_optimx_optim,
+    glmmTMB_calibrar_optimizer = glmmTMB_calibrar_optimizer,
+    glmmTMB_optimh_optimizer   = glmmTMB_optimh_optimizer
+  )
+  raffalib_objects <- ls(asNamespace("raffalib"), all.names = TRUE)
+
+  for (nm in names(optimizers)) {
+    offenders <- intersect(
+      codetools::findGlobals(optimizers[[nm]], merge = TRUE),
+      raffalib_objects
+    )
+    expect_identical(
+      offenders, character(0),
+      info = paste0(nm, "() calls raffalib object(s) [",
+                    paste(offenders, collapse = ", "),
+                    "] unqualified; this breaks fit_glmmTMB_parallel() workers")
+    )
+  }
+})
 
 test_that("fit_glmmTMB_parallel returns one fit per spec, named", {
   skip_on_cran()
@@ -26,7 +54,7 @@ test_that("fit_glmmTMB_parallel returns one fit per spec, named", {
   expect_equal(as.numeric(logLik(mods[[1]])), as.numeric(logLik(mods[[2]])))
 })
 
-test_that("raffalib optimizer controls survive the trip to the workers", {
+test_that("raffalib optimizer controls survive the trip to bare workers", {
   skip_on_cran()
 
   d <- glmmTMB::Salamanders[1:120, ]

@@ -50,8 +50,8 @@ Imports:
     utils
 Suggests:
     testthat (>= 3.0.0),
+    codetools,
     fixest,
-    pkgload,
     future,
     future.apply,
     ggplot2
