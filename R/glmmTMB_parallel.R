@@ -33,9 +33,15 @@
 #' conflict), so the data set is written once per spec rather than repeated.
 #' The whole call — including a custom `control`/optimizer object — is
 #' serialized to the worker, so raffalib optimizer controls
-#' (e.g. [glmmTMB_control_nloptr_ln_bobyqa()]) travel with the spec and work
-#' without installing raffalib on the workers, as long as any package the
-#' optimizer calls (referenced as `pkg::fun`) is installed.
+#' (e.g. [glmmTMB_control_nloptr_ln_bobyqa()]) travel with the spec. `glmmTMB`,
+#' `raffalib` and anything named in `packages` are loaded on every worker before
+#' the fits start; raffalib is required there because its optimizer functions
+#' call raffalib helpers, which resolve only inside the raffalib namespace. When
+#' raffalib is loaded via `devtools::load_all()` rather than installed, its
+#' source path is forwarded and each worker `pkgload::load_all()`s it. If a
+#' worker cannot load one of these packages the call fails with a message
+#' naming it, rather than with an opaque "could not find function" from the
+#' optimizer.
 #'
 #' @param specs A non-empty list; each element a named list of arguments for
 #'   [glmmTMB::glmmTMB()].
@@ -45,7 +51,7 @@
 #'   `min(length(specs), parallel::detectCores() - 1)`. With `ncores <= 1` the
 #'   fits run sequentially (no cluster).
 #' @param packages Character vector of packages to load on each worker
-#'   (`glmmTMB` is always loaded).
+#'   (`glmmTMB` and `raffalib` are always loaded).
 #' @param export Character vector of names of objects to copy from
 #'   `envir` to the workers (rarely needed — the spec carries what it references).
 #' @param envir Environment from which `export` names are taken.
@@ -90,11 +96,36 @@ fit_glmmTMB_parallel <- function(specs, ..., ncores = NULL,
   on.exit(parallel::stopCluster(cl), add = TRUE)
   if (!is.null(seed)) parallel::clusterSetRNGStream(cl, seed)
 
-  # load glmmTMB (its TMB DLL ships with it) plus any extra packages on workers
-  parallel::clusterCall(cl, function(pkgs) {
+  # raffalib itself must be loadable on the workers: the specs carry raffalib
+  # optimizer functions, whose bodies call raffalib helpers (e.g. myinfo()) that
+  # only resolve inside the raffalib namespace. When raffalib is loaded with
+  # devtools::load_all() instead of being installed, there is no namespace for a
+  # worker to find, so forward the source path and let each worker load_all() it.
+  dev_path <- if (requireNamespace("pkgload", quietly = TRUE) &&
+                  isTRUE(pkgload::is_dev_package("raffalib"))) {
+    tryCatch(find.package("raffalib"), error = function(e) NULL)
+  } else {
+    NULL
+  }
+
+  # load glmmTMB (its TMB DLL ships with it), raffalib and any extra packages
+  loaded <- parallel::clusterCall(cl, function(pkgs, dev_path) {
     for (p in pkgs) suppressPackageStartupMessages(requireNamespace(p, quietly = TRUE))
-    invisible(NULL)
-  }, unique(c("glmmTMB", packages)))
+    if (!requireNamespace("raffalib", quietly = TRUE) && !is.null(dev_path) &&
+        requireNamespace("pkgload", quietly = TRUE)) {
+      try(pkgload::load_all(dev_path, quiet = TRUE, export_all = FALSE,
+                            helpers = FALSE), silent = TRUE)
+    }
+    vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)
+  }, unique(c("glmmTMB", "raffalib", packages)), dev_path)
+
+  unavailable <- unique(unlist(lapply(loaded, function(x) names(x)[!x])))
+  if (length(unavailable) > 0) {
+    stop("the parallel workers could not load: ",
+         paste(unavailable, collapse = ", "),
+         ". Install the package(s) so the workers can reach them, or refit with ",
+         "ncores = 1 to run serially.", call. = FALSE)
+  }
 
   if (length(export) > 0) {
     parallel::clusterExport(cl, export, envir = envir)

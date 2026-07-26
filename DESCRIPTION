@@ -51,6 +51,7 @@ Imports:
 Suggests:
     testthat (>= 3.0.0),
     fixest,
+    pkgload,
     future,
     future.apply,
     ggplot2
