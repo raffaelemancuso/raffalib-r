@@ -21,7 +21,7 @@
 
 # Function to pass to the `optimizer` argument of glmmTMB::glmmTMBControl
 glmmTMB_optimh_optimizer <- function(par, fn, gr = NULL, ..., control = list()) {
-  print("[glmmTMB_optimh_optimizer] calibrar optimh optimization")
+  myinfo("optimh optimization")
   # No worker cluster is built here — see the note in glmmTMB_calibrar.R:
   # optimh() delegates to the same calibrar:::.optim2(), so `parallel` reaches
   # only the numerical-gradient branch that glmmTMB's analytic TMB gradient
@@ -37,8 +37,8 @@ glmmTMB_optimh_optimizer <- function(par, fn, gr = NULL, ..., control = list()) 
   )
   # convergence: An integer code. 0 indicates successful completion.
   convergence = ret$convergence == 0
-  cat(paste0("optimh convergence: ", convergence, "\n"))
-  cat(paste0("optimh message: ", ret$message, "\n"))
+  myinfo("optimh convergence:", convergence)
+  myinfo("optimh message:", ret$message)
   # glmmTMB automatically handles output from optim() if we rename the value component to objective
   mask <- names(ret) == "value"
   names(ret)[mask] <- "objective"

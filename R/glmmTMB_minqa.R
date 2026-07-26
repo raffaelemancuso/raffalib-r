@@ -46,7 +46,7 @@
 #' @export
 glmmTMB_minqa_optim <- function(par, fn, gr = NULL, lower = -Inf, upper = Inf,
                                 control = list(), method = "bobyqa", ...) {
-  print("minqa optimization")
+  myinfo("minqa optimization")
   if (is.null(control$iprint)) control$iprint <- 0L
   # minqa derives rhobeg = 0.2 * max(abs(par)); glmmTMB starts every parameter
   # at 0, so that collapses to 0 and rhoend = 1e-6*rhobeg = 0 fails minqa's

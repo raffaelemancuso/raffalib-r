@@ -29,7 +29,7 @@
 #'   renamed to `objective`.
 #' @export
 glmmTMB_optimx_optim <- function(...) {
-  print("optimx optimization")
+  myinfo("optimx optimization")
   ret <- optimx::optimr(...)
   # glmmTMB automatically handles output from optim(), by renaming the value component to objective
   mask <- names(ret) == "value"

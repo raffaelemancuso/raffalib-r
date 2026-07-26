@@ -78,7 +78,7 @@ glmmTMB_nloptr_optim <- function(par, fn, gr = NULL, lower = -Inf, upper = Inf,
   # nloptr status > 0 signals success: 1 SUCCESS, 2 STOPVAL, 3 FTOL, 4 XTOL
   # (5 MAXEVAL / 6 MAXTIME are stops; negatives are errors). glmmTMB wants 0.
   conv <- if (ret$status %in% 1:4) 0L else 1L
-  cat(paste0("nloptr status: ", ret$status, " (", ret$message, ")\n"))
+  myinfo("nloptr status:", paste0(ret$status, " (", ret$message, ")"))
   list(
     par = ret$solution,
     objective = ret$objective,
