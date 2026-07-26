@@ -47,7 +47,7 @@
 #' @export
 glmmTMB_nloptr_optim <- function(par, fn, gr = NULL, lower = -Inf, upper = Inf,
                                  control = list(), ...) {
-  print("nloptr optimization")
+  myinfo("nloptr optimization")
   algorithm <- if (!is.null(control$algorithm)) control$algorithm else "NLOPT_LN_BOBYQA"
   needs_grad <- grepl("_(LD|GD)_", algorithm)
 
@@ -87,6 +87,33 @@ glmmTMB_nloptr_optim <- function(par, fn, gr = NULL, lower = -Inf, upper = Inf,
   )
 }
 
+#' glmmTMB control object for an arbitrary NLopt algorithm
+#'
+#' The general constructor behind the `glmmTMB_control_nloptr_*()` family: it
+#' builds a [glmmTMB::glmmTMBControl()] object that optimizes with
+#' [glmmTMB_nloptr_optim()] using whichever NLopt algorithm you name. Prefer the
+#' per-algorithm wrappers in [glmmTMB_control_nloptr_methods] for the local
+#' algorithms; use this one when you need an algorithm they deliberately omit
+#' (a bounded global search, or a meta-algorithm needing `local_opts`) and can
+#' supply the extra `opts` it requires.
+#'
+#' @param algorithm NLopt algorithm name, e.g. `"NLOPT_LN_BOBYQA"`.
+#' @param opts A named list of nloptr `opts` (e.g. `maxeval`, `xtol_rel`,
+#'   `ftol_rel`, `local_opts`), merged over the algorithm selection and
+#'   defaults.
+#' @param optArgs A named list of extra arguments for the optimizer function.
+#' @return A `glmmTMBControl` object for the `control` argument of
+#'   [glmmTMB::glmmTMB()].
+#' @seealso [glmmTMB_control_nloptr_methods], [glmmTMB_nloptr_optim()].
+#' @examples
+#' \dontrun{
+#' glmmTMB::glmmTMB(
+#'   count ~ mined + (1 | site),
+#'   family = poisson, data = glmmTMB::Salamanders,
+#'   control = glmmTMB_control_nloptr("NLOPT_LN_SBPLX", opts = list(maxeval = 5000))
+#' )
+#' }
+#' @export
 # Function to pass to the `control` argument of glmmTMB::glmmTMB
 # (mirrors glmmTMB_control_calibrar / glmmTMB_control_optimx so the APIs match)
 glmmTMB_control_nloptr <- function(algorithm = "NLOPT_LN_BOBYQA",

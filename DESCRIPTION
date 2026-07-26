@@ -20,6 +20,7 @@ Imports:
     calibrar,
     cli,
     correlation,
+    crayon,
     DescTools,
     dplyr,
     flextable,

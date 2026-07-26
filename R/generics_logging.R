@@ -167,3 +167,15 @@ count_cell_changes <- function(old_df, new_df) {
   }
   n_changes
 }
+
+#' @export
+myinfo <- function(...) {
+  cat(crayon::blue(...))
+  cat("\n")
+}
+
+#' @export
+myheader <- function(...) {
+  cat(crayon::green(...))
+  cat("\n")
+}
