@@ -22,9 +22,11 @@
 # Function to pass to the `optimizer` argument of glmmTMB::glmmTMBControl
 glmmTMB_optimh_optimizer <- function(par, fn, gr = NULL, ..., control = list()) {
   print("[glmmTMB_optimh_optimizer] calibrar optimh optimization")
-  if (!is.null(control$ncores)) {
-    cl <- parallel::makeCluster(control$ncores)
-  }
+  # No worker cluster is built here — see the note in glmmTMB_calibrar.R:
+  # optimh() delegates to the same calibrar:::.optim2(), so `parallel` reaches
+  # only the numerical-gradient branch that glmmTMB's analytic TMB gradient
+  # bypasses. The old makeCluster() spawned idle workers and leaked them when
+  # optimh() threw.
   ret <- calibrar::optimh(
     par = par,
     fn = fn,
@@ -33,9 +35,6 @@ glmmTMB_optimh_optimizer <- function(par, fn, gr = NULL, ..., control = list()) 
     control = control,
     parallel = TRUE
   )
-  if (!is.null(control$ncores)) {
-    parallel::stopCluster(cl) # close the parallel connections
-  }
   # convergence: An integer code. 0 indicates successful completion.
   convergence = ret$convergence == 0
   cat(paste0("optimh convergence: ", convergence, "\n"))
@@ -63,13 +62,9 @@ glmmTMB_control_optimh <- function(optArgs=list(), optCtrl=list(), method = NULL
     optArgs = myoptArgs
   }
 
-  # Build optCtrl
-  myoptCtrl = list(ncores = ncores)
-  if(length(optCtrl) > 0) {
-    optCtrl = rlist::list.merge(myoptCtrl, optCtrl)
-  } else {
-    optCtrl = myoptCtrl
-  }
+  # optCtrl is passed through untouched: it used to carry an `ncores` default
+  # that existed only to size the optimizer's worker cluster (now removed), and
+  # calibrar has no `ncores` control of its own.
 
   # Build glmmTMBControl
   res <- glmmTMB::glmmTMBControl(
@@ -88,8 +83,9 @@ glmmTMB_control_optimh <- function(optArgs=list(), optCtrl=list(), method = NULL
 #' likelihood with the corresponding global or heuristic method from
 #' [calibrar::optimh()] rather than the default `nlminb()`. These derivative-free
 #' / population-based methods are slower but more robust to multi-modal or badly
-#' scaled likelihoods. The optimization is run in parallel across the available
-#' cores (`parallel::detectCores() - 1`).
+#' scaled likelihoods. The likelihood is evaluated with `glmmTMB`'s own parallel
+#' support (`parallel::detectCores() - 1` threads, `autopar = TRUE`); the
+#' optimizer itself runs single-threaded.
 #'
 #' Each function selects the method named in its suffix:
 #' \describe{

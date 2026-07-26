@@ -21,9 +21,13 @@ glmmTMB_calibrar_optimizer <- function(par, fn, gr = NULL, ..., control = list()
   print("[glmmTMB_calibrar_optimizer] calibrar optimization")
   #print("[glmmTMB_calibrar_optimizer] control:")
   #print(control)
-  if (!is.null(control$ncores)) {
-    cl <- parallel::makeCluster(control$ncores)
-  }
+  # No worker cluster is built here. calibrar consults `parallel` only for its
+  # *numerical* gradient (.grad_simple(), via foreach %dopar%), and only on the
+  # `gr = NULL` branch; glmmTMB always supplies its analytic TMB gradient, so
+  # that branch is never taken. A bare parallel::makeCluster() was also invisible
+  # to foreach, which needs a registered backend — it spawned idle workers and
+  # leaked them whenever optim2() threw. `parallel = TRUE` is kept so a caller
+  # who registers their own foreach backend still gets it.
   ret <- calibrar::optim2(
     par = par,
     fn = fn,
@@ -32,9 +36,6 @@ glmmTMB_calibrar_optimizer <- function(par, fn, gr = NULL, ..., control = list()
     control = control,
     parallel = TRUE
   )
-  if (!is.null(control$ncores)) {
-    parallel::stopCluster(cl) # close the parallel connections
-  }
   # debug
   # convergence: An integer code. 0 indicates successful completion.
   convergence = ret$convergence == 0
@@ -65,13 +66,9 @@ glmmTMB_control_calibrar <- function(optArgs=list(), optCtrl=list(), method = NU
   #print("[glmmTMB_control_calibrar] optArgs:")
   #print(optArgs)
 
-  # Build optCtrl
-  myoptCtrl = list(ncores = ncores)
-  if(length(optCtrl) > 0) {
-    optCtrl = rlist::list.merge(myoptCtrl, optCtrl)
-  } else {
-    optCtrl = myoptCtrl
-  }
+  # optCtrl is passed through untouched: it used to carry an `ncores` default
+  # that existed only to size the optimizer's worker cluster (now removed), and
+  # calibrar has no `ncores` control of its own.
   #print("[glmmTMB_control_calibrar] optCtrl:")
   #print(optCtrl)
 
@@ -94,8 +91,9 @@ glmmTMB_control_calibrar <- function(optArgs=list(), optCtrl=list(), method = NU
 #' a [glmmTMB::glmmTMBControl()] object instructing `glmmTMB` to optimize the
 #' likelihood with the corresponding method from [calibrar::optim2()] rather than
 #' the default `nlminb()`. They are useful when the default optimizer fails to
-#' converge or you want to cross-check the optimum. The optimization is run in
-#' parallel across the available cores (`parallel::detectCores() - 1`).
+#' converge or you want to cross-check the optimum. The likelihood is evaluated
+#' with `glmmTMB`'s own parallel support (`parallel::detectCores() - 1` threads,
+#' `autopar = TRUE`); the optimizer itself runs single-threaded.
 #'
 #' Each function selects the method named in its suffix:
 #' \describe{
