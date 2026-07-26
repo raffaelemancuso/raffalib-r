@@ -354,84 +354,214 @@ ggplot2docx <- function(
   return(finalize_docx(outs, outfp))
 }
 
-#' Collapse a categorical variable's rows into a single "controlled for" row
+#' Collapse several variables into ONE "controls included" row
 #'
 #' Regression tables (e.g. from [modelsummary::modelsummary()] with
 #' `output = "flextable"`) devote one block of rows (estimate, standard error,
-#' ...) to every level of a categorical variable. This helper replaces all the
-#' blocks belonging to a categorical variable with a single row holding the
-#' variable's label in the term column and `value` (default `"Yes"`) in every
-#' other column — the usual way of indicating that a set of controls or fixed
-#' effects was included. The collapsed row takes the position of the variable's
-#' first block; rows whose term cell is empty (e.g. standard-error rows) are
-#' dropped together with the coefficient row they follow.
+#' ...) to every level of every categorical variable. This helper replaces the
+#' rows of *all* the variables in `vars` with a **single** row — the usual
+#' "Controls: Yes" line of a regression table.
 #'
-#' @param tbl A `flextable` whose first column holds the term names.
-#' @param vars Character vector of variable-name prefixes: every body row whose
-#'   term starts with one of these (literal match, no regex), plus its
-#'   empty-term continuation rows, is collapsed. If an element is named, the
-#'   name is used as the displayed label of the collapsed row; otherwise the
-#'   prefix itself is displayed.
-#' @param value Text put in every non-term column of the collapsed row
+#' Variables are given by their **names in the model** (e.g. `"gender"`,
+#' `"piStage"`), not by whatever the table displays. When the table was built
+#' with `coef_rename = TRUE` the displayed terms are variable *labels*
+#' (`"Gender [male]"`, `"log(1+PubsPiQ1)"`), so pass the label lookup through
+#' `labels` — either a named character vector (`name -> label`) or the labelled
+#' data frame the models were fit on — and the names are resolved to the text
+#' actually shown. Each element of `vars` is treated as a **prefix** over
+#' variable names, so `"log_pi_5y_count"` picks up `log_pi_5y_count_Q1`,
+#' `log_pi_5y_count_Q2`, ... in one go. Names that resolve to no label are
+#' matched literally *and* in the spelling `modelsummary` gives unlabelled
+#' terms, with underscores turned into spaces (`"start_year"` also matches
+#' `"start year [2008]"`), which covers `coef_rename = FALSE` tables and
+#' variables whose label was dropped en route (`forcats::fct_drop()` does that).
+#'
+#' The collapsed row is inserted at the **end of the coefficients, immediately
+#' above the goodness-of-fit block**, wherever the collapsed variables happened
+#' to sit — which is where a "Controls: Yes" line belongs. The GOF block is
+#' located from the horizontal rule `modelsummary` draws above it; with no such
+#' rule the row goes at the bottom of the table. Rows whose term cell is empty
+#' (standard errors, confidence intervals) are removed along with the
+#' coefficient row they belong to. A column that is empty across every collapsed
+#' row keeps its blank cell rather than gaining `value`, so grouping columns
+#' (`component`, `effect`) stay intact and a model that did not include the
+#' controls is not mislabelled as having done so.
+#'
+#' @param tbl A `flextable`, typically from
+#'   [modelsummary::modelsummary()] with `output = "flextable"`.
+#' @param vars Character vector of variable names (or name prefixes) to collapse.
+#' @param label Text placed in the term column of the collapsed row.
+#' @param value Text placed in every model column of the collapsed row
 #'   (default `"Yes"`).
+#' @param labels Optional `name -> label` lookup used to resolve `vars` to the
+#'   displayed terms: a named character vector, or a data frame carrying
+#'   variable labels (passed through [labelled::var_label()]).
+#' @param term_col Column key holding the term text. By default it is detected
+#'   automatically, which is what you want for `modelsummary` `shape =`
+#'   layouts where the first column is `component` and the terms sit in the
+#'   second, unnamed one.
 #' @return The modified `flextable`.
-#' @seealso [flextable2docx()], which exposes this via its
-#'   `collapse_categorical` argument.
+#' @seealso [flextable2docx()], which writes the resulting table to Word.
 #' @examples
 #' \dontrun{
-#' mod <- lm(mpg ~ wt + factor(cyl), data = mtcars)
-#' tbl <- modelsummary::modelsummary(mod, output = "flextable")
-#' flextable_collapse_categorical(tbl, c("Cylinders FE" = "factor(cyl)"))
+#' tbl %>% flextable_collapse_group(
+#'   vars   = c("gender", "ethnicity_d", "piStage", "log_pi_5y_count"),
+#'   label  = "PI-level controls",
+#'   value  = "YES",
+#'   labels = pis
+#' )
 #' }
 #' @export
-flextable_collapse_categorical <- function(tbl, vars, value = "Yes") {
-  stopifnot(inherits(tbl, "flextable"))
-  labels <- names(vars)
-  if (is.null(labels)) labels <- unname(vars)
-  labels[labels == ""] <- vars[labels == ""]
-  for (k in seq_along(vars)) {
-    tbl <- flextable_collapse_one(tbl, vars[[k]], labels[[k]], value)
-  }
-  return(tbl)
-}
+flextable_collapse_group <- function(tbl, vars, label, value = "Yes",
+                                     labels = NULL, term_col = NULL) {
+  stopifnot(
+    inherits(tbl, "flextable"),
+    is.character(vars), length(vars) > 0,
+    is.character(label), length(label) == 1
+  )
 
-# Collapse the rows of one categorical variable in a flextable body.
-# A "block" is a row whose term matches `var` plus the empty-term rows that
-# follow it (standard errors, confidence intervals, ...). The first block's
-# first row is rewritten to `label` / `value`; every other matched row is
-# deleted. Both the displayed content (via compose) and the underlying
-# dataset are updated, so later operations on the flextable stay consistent.
-flextable_collapse_one <- function(tbl, var, label, value) {
+  # name -> displayed label lookup
+  if (is.data.frame(labels)) labels <- labelled::var_label(labels)
+  labels <- unlist(labels[!vapply(labels, is.null, logical(1))])
+
+  # every variable whose NAME starts with one of `vars` contributes its label
+  # (or, unlabelled, its bare name) as a text prefix to match on
+  prefixes <- unique(unlist(lapply(vars, function(v) {
+    hit <- if (length(labels)) labels[startsWith(names(labels), v)] else character(0)
+    # An unlabelled variable is printed by `modelsummary` with its underscores
+    # turned into spaces ("start_year" -> "start year [2008]"), so match that
+    # spelling too. This matters for variables whose label was dropped along
+    # the way -- `forcats::fct_drop()` discards it, for instance.
+    c(unname(hit), v, gsub("_", " ", v))
+  })))
+
+  matches_any <- function(x) {
+    Reduce(`|`, lapply(prefixes, function(p) startsWith(x, p)),
+           init = logical(length(x)))
+  }
+
+  # locate the column holding the term text
   col_keys <- tbl$col_keys
-  terms <- trimws(as.character(tbl$body$dataset[[col_keys[1]]]))
+  if (is.null(term_col)) {
+    hits <- vapply(col_keys, function(ck) {
+      sum(matches_any(trimws(as.character(tbl$body$dataset[[ck]]))))
+    }, integer(1))
+    if (max(hits) == 0) {
+      warning("No rows matching ", paste(sQuote(vars), collapse = ", "),
+              " were found; table left unchanged.")
+      return(tbl)
+    }
+    term_col <- col_keys[which.max(hits)]
+  }
+
+  terms <- trimws(as.character(tbl$body$dataset[[term_col]]))
   blank <- is.na(terms) | terms == ""
-  starts <- which(!blank & startsWith(terms, var))
+  starts <- which(!blank & matches_any(terms))
   if (length(starts) == 0) {
-    warning("No rows matching categorical variable '", var, "' were found.")
+    warning("No rows matching ", paste(sQuote(vars), collapse = ", "),
+            " were found in column ", sQuote(term_col), "; table left unchanged.")
     return(tbl)
   }
+
+  # a block is a matched row plus the blank-term rows trailing it
   rows <- integer(0)
   for (s in starts) {
     e <- s
     while (e < length(terms) && blank[e + 1]) e <- e + 1
     rows <- c(rows, s:e)
   }
-  first <- rows[1]
-  tbl <- flextable::compose(tbl, i = first, j = col_keys[1],
+  rows <- sort(unique(rows))
+
+  # columns that are blank on every matched row (grouping columns such as
+  # `component`/`effect`) must stay blank on the collapsed row
+  blank_col <- vapply(col_keys, function(ck) {
+    all(trimws(as.character(tbl$body$dataset[[ck]]))[rows] == "")
+  }, logical(1))
+
+  # Where does the collapsed row go? At the end of the coefficients, just above
+  # the goodness-of-fit block, rather than where the variables happened to sit.
+  gof <- flextable_gof_start(tbl)
+  n <- nrow(tbl$body$dataset)
+  if (is.na(gof)) gof <- n + 1L
+
+  keep <- setdiff(seq_len(n), rows)          # surviving rows, in order
+  pos <- sum(keep < gof)                     # how many of them precede the GOF block
+  # style template: the row the collapsed one will sit under, so it inherits the
+  # look of an ordinary coefficient row rather than a GOF row
+  template <- if (pos > 0) keep[pos] else if (length(keep)) keep[1] else rows[1]
+
+  # ONE index vector performs the whole edit: matched rows are absent from it and
+  # the template appears twice, which inserts the new row in the right place. No
+  # rows are moved afterwards.
+  idx <- append(keep, template, after = pos)
+  tbl$body <- flextable_subset_body_rows(tbl$body, idx)
+  new_row <- pos + 1L
+
+  # fill the inserted row
+  tbl <- flextable::compose(tbl, i = new_row, j = term_col,
                             value = flextable::as_paragraph(label),
                             part = "body")
-  tbl$body$dataset[[col_keys[1]]][first] <- label
-  for (ck in col_keys[-1]) {
-    tbl <- flextable::compose(tbl, i = first, j = ck,
-                              value = flextable::as_paragraph(value),
+  tbl$body$dataset[[term_col]][new_row] <- label
+  for (ck in setdiff(col_keys, term_col)) {
+    txt <- if (isTRUE(blank_col[[ck]])) "" else value
+    tbl <- flextable::compose(tbl, i = new_row, j = ck,
+                              value = flextable::as_paragraph(txt),
                               part = "body")
-    tbl$body$dataset[[ck]][first] <- value
-  }
-  drop <- setdiff(rows, first)
-  if (length(drop) > 0) {
-    tbl <- flextable::delete_rows(tbl, i = drop, part = "body")
+    tbl$body$dataset[[ck]][new_row] <- txt
   }
   return(tbl)
+}
+
+# First row of the goodness-of-fit block, or NA if there is none.
+#
+# `modelsummary` separates estimates from GOF statistics with a horizontal rule,
+# which survives in the flextable as a top border on the first GOF row. Where
+# several rules exist (grouped/panelled tables) the GOF block is the last one,
+# because it always sits at the bottom of the table.
+flextable_gof_start <- function(tbl) {
+  cells <- tbl$body$styles$cells
+  top <- cells[["border.width.top"]]$data
+  if (!is.null(top) && is.matrix(top)) {
+    hit <- which(apply(top, 1, function(r) any(!is.na(r) & r > 0)))
+    hit <- hit[hit > 1]
+    if (length(hit)) return(max(hit))
+  }
+  # some themes draw the same separator as a bottom border on the last estimate
+  bot <- cells[["border.width.bottom"]]$data
+  if (!is.null(bot) && is.matrix(bot)) {
+    hit <- which(apply(bot, 1, function(r) any(!is.na(r) & r > 0)))
+    hit <- hit[hit < nrow(bot)]
+    if (length(hit)) return(max(hit) + 1L)
+  }
+  NA_integer_
+}
+
+# Reindex every parallel structure of a flextable body part with `idx`, the same
+# operation flextable's own `delete_rows()` performs with a negative index. A
+# repeated index duplicates that row, which is how a new row gets inserted while
+# inheriting the styling of its template.
+flextable_subset_body_rows <- function(part, idx) {
+  reindex <- function(x) {
+    if (is.null(x$data)) {
+      cli::cli_abort("Unexpected {.pkg flextable} internals: no {.field data} field.")
+    }
+    x$data <- x$data[idx, , drop = FALSE]
+    x$nrow <- length(idx)
+    x
+  }
+  part$dataset <- part$dataset[idx, , drop = FALSE]
+  rownames(part$dataset) <- NULL
+  part$rowheights <- part$rowheights[idx]
+  part$hrule <- part$hrule[idx]
+  part$spans$rows <- part$spans$rows[idx, , drop = FALSE]
+  part$spans$columns <- part$spans$columns[idx, , drop = FALSE]
+  part$content <- reindex(part$content)
+  for (grp in c("cells", "pars", "text")) {
+    for (prop in names(part$styles[[grp]])) {
+      part$styles[[grp]][[prop]] <- reindex(part$styles[[grp]][[prop]])
+    }
+  }
+  part
 }
 
 #' Save a flextable to a Word document
@@ -449,16 +579,11 @@ flextable_collapse_one <- function(tbl, var, label, value) {
 #' @param column_width Optional column width(s) passed to [flextable::width()].
 #' @param layout_autofit If `TRUE` (default) use an autofit layout, otherwise a
 #'   fixed layout.
-#' @param collapse_categorical Optional character vector of variable-name
-#'   prefixes forwarded to [flextable_collapse_categorical()]: the coefficient
-#'   rows of those categorical variables are replaced by a single row with
-#'   `"Yes"` in every column before export. Name the elements to control the
-#'   displayed labels.
 #' @param word_prop A named list of page/caption options forwarded to
 #'   [prepare_docx()] (caption text, paper format, margins, ...).
 #' @return Called for its side effect of writing `outfp`; returns the result of
 #'   [prepare_docx()]'s finaliser invisibly.
-#' @seealso [plot2docx()], [ggplot2docx()], [flextable_collapse_categorical()]
+#' @seealso [plot2docx()], [ggplot2docx()], [flextable_collapse_group()]
 #' @importFrom magrittr %<>%
 #' @export
 flextable2docx <- function(
@@ -470,16 +595,10 @@ flextable2docx <- function(
   padding = NULL,
   column_width = NULL,
   layout_autofit = TRUE,
-  collapse_categorical = NULL,
   word_prop = list()
 ) {
   # Initialize Word document
   outs <- do.call(prepare_docx, word_prop)
-
-  # Collapse categorical-control rows into single "Yes" rows
-  if (!is.null(collapse_categorical)) {
-    tbl <- flextable_collapse_categorical(tbl, collapse_categorical)
-  }
 
   # Define table layout
   layout <- ifelse(layout_autofit, "autofit", "fixed")
