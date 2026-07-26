@@ -168,14 +168,17 @@ count_cell_changes <- function(old_df, new_df) {
   n_changes
 }
 
+# cli::col_*() concatenates with paste0(), where crayon::blue()/green() used
+# paste() — so paste(...) here keeps the space-separated, cat()-like behaviour
+# callers expect from myinfo("Rows:", n).
 #' @export
 myinfo <- function(...) {
-  cat(crayon::blue(...))
+  cat(cli::col_blue(paste(...)))
   cat("\n")
 }
 
 #' @export
 myheader <- function(...) {
-  cat(crayon::green(...))
+  cat(cli::col_green(paste(...)))
   cat("\n")
 }
