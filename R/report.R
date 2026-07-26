@@ -60,6 +60,8 @@ report_build <- function(spec, title) {
 #' writes it to `fp` (conventionally `data/<stage>/<N>_report.txt`, numbered
 #' after the producing script).
 #'
+#' The file is always written with LF line endings, on every platform.
+#'
 #' @inheritParams report_build
 #' @param fp Output file path.
 #' @return The report lines, invisibly.
@@ -67,7 +69,12 @@ report_build <- function(spec, title) {
 report_save <- function(spec, title, fp) {
   report <- report_build(spec, title)
   writeLines(report)
-  writeLines(report, fp)
+  # Write through a binary connection so the line separator is LF everywhere.
+  # `writeLines(report, fp)` opens a text-mode connection, which on Windows
+  # translates "\n" to "\r\n" and produces a CRLF file.
+  con <- file(fp, open = "wb")
+  on.exit(close(con), add = TRUE)
+  writeLines(report, con)
   message("Report saved into ", fp)
   invisible(report)
 }
