@@ -54,7 +54,8 @@ Suggests:
     fixest,
     future,
     future.apply,
-    ggplot2
+    ggplot2,
+    MASS
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Config/roxygen2/version: 8.0.0
