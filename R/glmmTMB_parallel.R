@@ -39,8 +39,22 @@
 #' in `packages` are loaded on every worker before the fits start; if a worker
 #' cannot load one of them the call fails with a message naming it.
 #'
+#' Arguments passed by name are recorded in each fit's `call` **as that name**
+#' rather than as their value. `do.call()` substitutes values into the call it
+#' builds, and `glmmTMB` stores that call verbatim, so the naive version puts a
+#' copy of the whole data frame — and the whole family function — inside every
+#' fitted object. Calling with `data = pis, family = glmmTMB::nbinom2` yields a
+#' call reading `glmmTMB(formula = ..., data = pis, family = glmmTMB::nbinom2)`,
+#' which is what a hand-written fit would record and is orders of magnitude
+#' smaller. Whatever the call holds stays evaluable, so refitting from
+#' `mod$call$family` still works. An expression that is not a plain name (or
+#' `pkg::name`) is not recorded this way, since re-evaluating it later need not
+#' give the same object; `data` is always referred to by name, falling back to
+#' `.fit_data` when the caller passed an expression.
+#'
 #' @param specs A non-empty list; each element a named list of arguments for
-#'   [glmmTMB::glmmTMB()].
+#'   [glmmTMB::glmmTMB()]. A value here overrides the shared argument of the
+#'   same name, and is recorded by value.
 #' @param ... Arguments shared by every fit (e.g. `data`, `ziformula`,
 #'   `control`), merged into each spec.
 #' @param ncores Number of worker processes. Default
@@ -73,10 +87,46 @@ fit_glmmTMB_parallel <- function(specs, ..., ncores = NULL,
   stopifnot(is.list(specs), length(specs) > 0)
   shared <- list(...)
 
+  # How the caller wrote each shared argument, e.g. quote(pis) or
+  # quote(glmmTMB::nbinom2), so the fitted objects can refer to them by name
+  # instead of by value.
+  shared_exprs <- as.list(substitute(list(...)))[-1L]
+  data_expr <- shared_exprs[["data"]]
+  data_name <- if (is.name(data_expr)) as.character(data_expr) else ".fit_data"
+  # a bare name, or pkg::name -- anything more complex would be misleading to
+  # record, since re-evaluating it later need not give the same object
+  is_simple_ref <- function(e) {
+    is.name(e) || (is.call(e) && length(e) == 3L && identical(e[[1L]], as.name("::")))
+  }
+
   # one self-contained fitter; captures `shared` in its environment so the
   # closure carries it to the worker
   fit_one <- function(spec) {
-    do.call(glmmTMB::glmmTMB, utils::modifyList(shared, spec))
+    args <- utils::modifyList(shared, spec)
+    # do.call() substitutes argument VALUES into the call it builds, and
+    # glmmTMB stores that call verbatim. Passing the function object inlines
+    # the entire glmmTMB body, and passing `data` inlines the whole data frame,
+    # so every fitted model -- and every .rds backup of one -- carries a copy
+    # of the data. Name the function instead of passing it, and refer to the
+    # data by symbol, evaluated in an environment that binds it.
+    env <- new.env(parent = asNamespace("glmmTMB"))
+    if ("data" %in% names(args)) {
+      assign(data_name, args[["data"]], envir = env)
+      args[["data"]] <- as.name(data_name)
+    }
+    # Everything else the caller passed by name goes in as that name:
+    # `family = glmmTMB::nbinom2` would otherwise inline the whole nbinom2
+    # function body into every fit. What lands in mod$call stays evaluable, so
+    # callers reading it back (e.g. to refit with the same family) still work.
+    # Arguments a spec overrides keep the spec's value.
+    for (nm in setdiff(names(args), c("data", names(spec)))) {
+      e <- shared_exprs[[nm]]
+      if (!is.null(e) && is_simple_ref(e)) {
+        if (is.name(e)) assign(as.character(e), args[[nm]], envir = env)
+        args[[nm]] <- e
+      }
+    }
+    do.call("glmmTMB", args, envir = env)
   }
 
   if (is.null(ncores)) {

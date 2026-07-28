@@ -37,6 +37,44 @@ test_that("optimizer functions reference no raffalib objects (worker-safe)", {
   }
 })
 
+test_that("the fitted call records names, not inlined data and function bodies", {
+  skip_on_cran()
+
+  # do.call() substitutes argument VALUES into the call it builds, and glmmTMB
+  # stores that call: the naive version inlines the whole data frame and the
+  # whole family function into every fit, so a list of models carries a copy of
+  # the data per model.
+  d <- glmmTMB::Salamanders[1:150, ]
+  specs <- list(a = list(formula = count ~ mined))
+  mods <- fit_glmmTMB_parallel(specs, data = d, family = glmmTMB::nbinom2,
+                               ncores = 1)
+  cl <- mods[[1]]$call
+
+  # the call refers to the caller's own names
+  expect_true(is.name(cl$data))
+  expect_identical(deparse(cl$data), "d")
+  expect_identical(deparse(cl$family), "glmmTMB::nbinom2")
+  expect_identical(deparse(cl[[1]]), "glmmTMB")
+
+  # and is therefore small: the data frame is not inside it
+  expect_lt(as.numeric(object.size(cl)), as.numeric(object.size(d)))
+
+  # what it records still evaluates, which callers rely on when refitting
+  expect_s3_class(eval(cl$family)(), "family")
+  expect_equal(nrow(insight::get_data(mods[[1]])), nrow(d))
+})
+
+test_that("a spec value overrides the shared argument of the same name", {
+  skip_on_cran()
+
+  d <- glmmTMB::Salamanders[1:150, ]
+  specs <- list(a = list(formula = count ~ mined, family = poisson()))
+  mods <- fit_glmmTMB_parallel(specs, data = d, family = glmmTMB::nbinom2,
+                               ncores = 1)
+  # the spec's family wins, and is not replaced by the shared expression
+  expect_identical(family(mods[[1]])$family, "poisson")
+})
+
 test_that("fit_glmmTMB_parallel returns one fit per spec, named", {
   skip_on_cran()
 
