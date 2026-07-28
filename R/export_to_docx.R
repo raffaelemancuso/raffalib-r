@@ -376,13 +376,14 @@ ggplot2docx <- function(
 #' `"start year [2008]"`), which covers `coef_rename = FALSE` tables and
 #' variables whose label was dropped en route (`forcats::fct_drop()` does that).
 #'
-#' The collapsed row takes the **position of the first row of the group**, so it
-#' stays where the reader expects those variables to be. When the group is the
-#' last block of coefficients it therefore ends up just above the
-#' goodness-of-fit statistics, and the coefficient/GOF rule — which
-#' `modelsummary` draws as a bottom border on the last coefficient row, and which
-#' would otherwise be deleted along with that block — is redrawn on whatever row
-#' ends up last. Rows whose term cell is empty
+#' The collapsed row is **moved to the end of the coefficient block**, just
+#' above the goodness-of-fit statistics, so successive calls stack their
+#' "Controls: Yes" rows into one block there, in call order. Set
+#' `move_before_gof = FALSE` to keep the row at the position of the first row
+#' of the group instead, where the reader expects those variables to be. Either
+#' way the coefficient/GOF rule — which `modelsummary` draws as a bottom border
+#' on the last coefficient row, and which would otherwise be deleted along with
+#' that block — is redrawn on whatever row ends up last. Rows whose term cell is empty
 #' (standard errors, confidence intervals) are removed along with the
 #' coefficient row they belong to. A column that is empty across every collapsed
 #' row keeps its blank cell rather than gaining `value`, so grouping columns
@@ -402,6 +403,10 @@ ggplot2docx <- function(
 #'   automatically, which is what you want for `modelsummary` `shape =`
 #'   layouts where the first column is `component` and the terms sit in the
 #'   second, unnamed one.
+#' @param move_before_gof Move the collapsed row to the end of the coefficient
+#'   block, just above the goodness-of-fit statistics (default `TRUE`);
+#'   successive calls stack their rows there in call order. With `FALSE` the
+#'   row takes the position of the first row of the group.
 #' @return The modified `flextable`.
 #' @seealso [flextable2docx()], which writes the resulting table to Word.
 #' @examples
@@ -415,7 +420,8 @@ ggplot2docx <- function(
 #' }
 #' @export
 flextable_collapse_group <- function(tbl, vars, label, value = "Yes",
-                                     labels = NULL, term_col = NULL) {
+                                     labels = NULL, term_col = NULL,
+                                     move_before_gof = TRUE) {
   stopifnot(
     inherits(tbl, "flextable"),
     is.character(vars), length(vars) > 0,
@@ -480,8 +486,11 @@ flextable_collapse_group <- function(tbl, vars, label, value = "Yes",
     all(trimws(as.character(tbl$body$dataset[[ck]]))[rows] == "")
   }, logical(1))]
 
+  # at = NULL lets flextable_insert_row default to the start of the GOF block,
+  # i.e. the end of the coefficients
   flextable_insert_row(tbl, term_col, label, value,
-                       at = rows[1], drop = rows, blank_cols = blank_cols)
+                       at = if (move_before_gof) NULL else rows[1],
+                       drop = rows, blank_cols = blank_cols)
 }
 
 #' Drop the rows of one model component from a regression table
@@ -746,17 +755,35 @@ flextable_subset_body_rows <- function(part, idx) {
 #'
 #' Writes a `flextable` (typically a regression or summary table produced by
 #' `modelsummary`/`gtsummary`) to a `.docx` file, applying a uniform font,
-#' alignment and (optionally) padding and column widths.
+#' alignment, padding and page-filling column widths. Cells are anchored
+#' "Align Top Left" (Word's naming) in the first column and "Align Top
+#' Center" in every other column, across header, body and footer.
 #'
 #' @param tbl A `flextable` object.
 #' @param outfp Output file path for the `.docx` file.
 #' @param font_name,font_size Font family and size (pt) applied to the whole
 #'   table.
-#' @param align Table alignment, one of `"left"`, `"center"`, `"right"`.
-#' @param padding Optional cell padding (applied to all parts) if not `NULL`.
-#' @param column_width Optional column width(s) passed to [flextable::width()].
-#' @param layout_autofit If `TRUE` (default) use an autofit layout, otherwise a
-#'   fixed layout.
+#' @param table_alignment Placement of the whole table on the page, one of
+#'   `"left"`, `"center"`, `"right"` (not the cell text alignment, which is
+#'   fixed as described above).
+#' @param padding.top,padding.bottom,padding.left,padding.right Per-side cell
+#'   padding (pt, all parts); `NULL` leaves that side at the table's own
+#'   values. `padding.left` and `padding.right` default to `0`: flextable writes
+#'   horizontal padding into Word as a paragraph indent on every cell
+#'   paragraph (the real cell margins are zeroed), which reads as an
+#'   invisible "space" before each entry — backspace-deletable but never shown
+#'   by formatting marks. Pass `NULL` to leave a side untouched.
+#' @param layout Table layout, one of:
+#'   * `"fit_first_column"` (default) — the table fills the usable page width
+#'     (computed from `word_prop`'s paper format, orientation and margins)
+#'     with a fixed layout: the first column is sized to its body content —
+#'     capped at 40% of the usable width — and the remaining width is split
+#'     equally among the other columns. This stops Word's autofit from
+#'     squeezing the term column of wide regression tables into multi-line
+#'     wraps. A one-column table falls back to `"autofit"`.
+#'   * `"autofit"` — Word recomputes the column widths from content.
+#'   * `"fixed"` — fixed layout with the widths the `flextable` already
+#'     carries.
 #' @param word_prop A named list of page/caption options forwarded to
 #'   [prepare_docx()] (caption text, paper format, margins, ...).
 #' @return Called for its side effect of writing `outfp`; returns the result of
@@ -769,30 +796,78 @@ flextable2docx <- function(
   outfp,
   font_name = "Aptos",
   font_size = 12,
-  align = "left",
-  padding = NULL,
-  column_width = NULL,
-  layout_autofit = TRUE,
+  table_alignment = "left",
+  padding.top = NULL,
+  padding.bottom = NULL,
+  padding.left = 0,
+  padding.right = 0,
+  layout = c("fit_first_column", "autofit", "fixed"),
   word_prop = list()
 ) {
+  layout <- match.arg(layout)
+
   # Initialize Word document
   outs <- do.call(prepare_docx, word_prop)
 
-  # Define table layout
-  layout <- ifelse(layout_autofit, "autofit", "fixed")
-
+  # Font and padding first: the column widths computed below depend on both
   tbl %<>%
     flextable::font(fontname = font_name, part = "all") %>%
-    flextable::fontsize(size = font_size, part = "all") %>%
-    flextable::set_table_properties(layout = layout, align = align)
+    flextable::fontsize(size = font_size, part = "all")
 
-  if (!is.null(padding)) {
+  # Cell alignment, in Word's naming: "Align Top Left" for the first (term)
+  # column, "Align Top Center" for the others. Top-anchoring keeps rows
+  # reading level when cells differ in line count (multi-line terms,
+  # estimate + SE cells). Footer notes are unaffected: they are merged rows
+  # anchored on the left-aligned first column.
+  tbl %<>%
+    flextable::valign(valign = "top", part = "all") %>%
+    flextable::align(j = 1, align = "left", part = "all")
+  if (length(tbl$col_keys) > 1) {
+    tbl %<>% flextable::align(
+      j = seq(2, length(tbl$col_keys)),
+      align = "center",
+      part = "all"
+    )
+  }
+
+  pads <- list(padding.top, padding.bottom, padding.left, padding.right)
+  if (!all(vapply(pads, is.null, logical(1)))) {
     tbl %<>%
       flextable::padding(
-        padding = padding,
+        padding.top = padding.top,
+        padding.bottom = padding.bottom,
+        padding.left = padding.left,
+        padding.right = padding.right,
         part = "all"
       )
   }
+
+  # Size the first column to its content (capped) and split the remaining
+  # usable page width equally among the other columns. Needs the fixed
+  # layout: under autofit Word recomputes the widths itself and squeezes the
+  # term column.
+  column_width <- NULL
+  if (identical(layout, "fit_first_column")) {
+    if (length(tbl$col_keys) > 1) {
+      wp <- function(nm, def) if (is.null(word_prop[[nm]])) def else word_prop[[nm]]
+      paper_w_mm <- if (isTRUE(word_prop$page_landscape)) {
+        outs[["paper_height"]]
+      } else {
+        outs[["paper_width"]]
+      }
+      usable <- paper_w_mm / 25.4 -
+        wp("page_margin_left", 1) - wp("page_margin_right", 1)
+      w1 <- min(flextable::dim_pretty(tbl, part = "body")$widths[1], 0.4 * usable)
+      k <- length(tbl$col_keys) - 1L
+      column_width <- c(w1, rep((usable - w1) / k, k))
+      layout <- "fixed"
+    } else {
+      # a one-column table has nothing to distribute
+      layout <- "autofit"
+    }
+  }
+
+  tbl %<>% flextable::set_table_properties(layout = layout, align = table_alignment)
 
   if (!is.null(column_width)) {
     tbl %<>% flextable::width(width = column_width)
