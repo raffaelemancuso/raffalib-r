@@ -171,12 +171,36 @@ count_cell_changes <- function(old_df, new_df) {
 # cli::col_*() concatenates with paste0(), where crayon::blue()/green() used
 # paste() — so paste(...) here keeps the space-separated, cat()-like behaviour
 # callers expect from myinfo("Rows:", n).
+
+#' Print a coloured console message
+#'
+#' Thin [cat()] wrappers that colour their output with \pkg{cli}: `myinfo()`
+#' prints in blue, for ordinary progress messages, and `myheader()` in green,
+#' for the section titles of a script. Arguments are joined with [paste()], so
+#' they are separated by spaces and terminated with a newline, matching what
+#' callers expect from `cat()`.
+#'
+#' `myheader()` is meant to echo a script's section structure to the console:
+#' the convention is an RStudio section header followed immediately by the
+#' matching call, so the log mirrors the source.
+#'
+#' ```r
+#' # Load data ----
+#' myheader("Load data")
+#' ```
+#'
+#' @param ... Objects to print, joined with [paste()].
+#' @return `NULL`, invisibly; called for the side effect of printing.
+#' @examples
+#' myheader("Load data")
+#' myinfo("Rows:", format(15839, big.mark = ","))
 #' @export
 myinfo <- function(...) {
   cat(cli::col_blue(paste(...)))
   cat("\n")
 }
 
+#' @rdname myinfo
 #' @export
 myheader <- function(...) {
   cat(cli::col_green(paste(...)))
