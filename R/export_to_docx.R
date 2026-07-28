@@ -366,8 +366,8 @@ ggplot2docx <- function(
 #' `"piStage"`), not by whatever the table displays. When the table was built
 #' with `coef_rename = TRUE` the displayed terms are variable *labels*
 #' (`"Gender [male]"`, `"log(1+PubsPiQ1)"`), so pass the label lookup through
-#' `labels` — either a named character vector (`name -> label`) or the labelled
-#' data frame the models were fit on — and the names are resolved to the text
+#' `data` — either the labelled data frame the models were fit on or a named
+#' character vector (`name -> label`) — and the names are resolved to the text
 #' actually shown. Each element of `vars` is treated as a **prefix** over
 #' variable names, so `"log_pi_5y_count"` picks up `log_pi_5y_count_Q1`,
 #' `log_pi_5y_count_Q2`, ... in one go. Names that resolve to no label are
@@ -393,12 +393,12 @@ ggplot2docx <- function(
 #' @param tbl A `flextable`, typically from
 #'   [modelsummary::modelsummary()] with `output = "flextable"`.
 #' @param vars Character vector of variable names (or name prefixes) to collapse.
-#' @param label Text placed in the term column of the collapsed row.
-#' @param value Text placed in every model column of the collapsed row
+#' @param new_label Text placed in the term column of the collapsed row.
+#' @param new_value Text placed in every model column of the collapsed row
 #'   (default `"Yes"`).
-#' @param labels Optional `name -> label` lookup used to resolve `vars` to the
-#'   displayed terms: a named character vector, or a data frame carrying
-#'   variable labels (passed through [labelled::var_label()]).
+#' @param data Optional lookup used to resolve `vars` to the displayed terms:
+#'   the labelled data frame the models were fit on (labels read via
+#'   [labelled::var_label()]), or a named `name -> label` character vector.
 #' @param term_col Column key holding the term text. By default it is detected
 #'   automatically, which is what you want for `modelsummary` `shape =`
 #'   layouts where the first column is `component` and the terms sit in the
@@ -412,23 +412,24 @@ ggplot2docx <- function(
 #' @examples
 #' \dontrun{
 #' tbl %>% flextable_collapse_group(
-#'   vars   = c("gender", "ethnicity_d", "piStage", "log_pi_5y_count"),
-#'   label  = "PI-level controls",
-#'   value  = "YES",
-#'   labels = pis
+#'   vars      = c("gender", "ethnicity_d", "piStage", "log_pi_5y_count"),
+#'   new_label = "PI-level controls",
+#'   new_value = "YES",
+#'   data      = pis
 #' )
 #' }
 #' @export
-flextable_collapse_group <- function(tbl, vars, label, value = "Yes",
-                                     labels = NULL, term_col = NULL,
+flextable_collapse_group <- function(tbl, vars, new_label, new_value = "Yes",
+                                     data = NULL, term_col = NULL,
                                      move_before_gof = TRUE) {
   stopifnot(
     inherits(tbl, "flextable"),
     is.character(vars), length(vars) > 0,
-    is.character(label), length(label) == 1
+    is.character(new_label), length(new_label) == 1
   )
 
   # name -> displayed label lookup
+  labels <- data
   if (is.data.frame(labels)) labels <- labelled::var_label(labels)
   labels <- unlist(labels[!vapply(labels, is.null, logical(1))])
 
@@ -488,7 +489,7 @@ flextable_collapse_group <- function(tbl, vars, label, value = "Yes",
 
   # at = NULL lets flextable_insert_row default to the start of the GOF block,
   # i.e. the end of the coefficients
-  flextable_insert_row(tbl, term_col, label, value,
+  flextable_insert_row(tbl, term_col, new_label, new_value,
                        at = if (move_before_gof) NULL else rows[1],
                        drop = rows, blank_cols = blank_cols)
 }

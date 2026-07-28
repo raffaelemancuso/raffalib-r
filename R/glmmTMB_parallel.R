@@ -67,6 +67,16 @@
 #' @param envir Environment from which `export` names are taken.
 #' @param seed Optional integer; if given, an RNG stream is set on the cluster
 #'   for reproducibility.
+#' @param strip_formula_env If `TRUE` (default), pass the fitted models
+#'   through [glmmTMB_strip_formula_env()] before returning them. The
+#'   `do.call()` environment binds the full dataset (and any shared arguments
+#'   recorded by name), and `glmmTMB` attaches that environment to every
+#'   formula/`terms` of the fitted object — so without stripping, every model
+#'   in the returned list, and every `.rds` backup of it, carries its own
+#'   private copy of the data. Stripping rebinds those environments to
+#'   [globalenv()], where the name recorded in `call$data` resolves in the
+#'   calling session. Set to `FALSE` when the data is *not* reachable by that
+#'   name from the global environment.
 #' @return A list of fitted `glmmTMB` models, in the order of `specs`
 #'   (`names(specs)` are preserved).
 #' @examples
@@ -83,7 +93,8 @@ fit_glmmTMB_parallel <- function(specs, ..., ncores = NULL,
                                  packages = character(0),
                                  export = character(0),
                                  envir = parent.frame(),
-                                 seed = NULL) {
+                                 seed = NULL,
+                                 strip_formula_env = TRUE) {
   stopifnot(is.list(specs), length(specs) > 0)
   shared <- list(...)
 
@@ -135,7 +146,9 @@ fit_glmmTMB_parallel <- function(specs, ..., ncores = NULL,
   ncores <- min(ncores, length(specs))
 
   if (ncores <= 1L) {
-    return(stats::setNames(lapply(specs, fit_one), names(specs)))
+    res <- stats::setNames(lapply(specs, fit_one), names(specs))
+    if (strip_formula_env) res <- glmmTMB_strip_formula_env(res)
+    return(res)
   }
 
   cl <- parallel::makeCluster(ncores)
@@ -166,5 +179,88 @@ fit_glmmTMB_parallel <- function(specs, ..., ncores = NULL,
   }
 
   res <- parallel::parLapply(cl, specs, fit_one)
-  stats::setNames(res, names(specs))
+  res <- stats::setNames(res, names(specs))
+  # stripped here in the main session rather than on the workers: fit_one must
+  # stay free of raffalib calls (see the note above clusterCall)
+  if (strip_formula_env) res <- glmmTMB_strip_formula_env(res)
+  res
+}
+
+#' Strip the data-laden environment from fitted glmmTMB models
+#'
+#' `glmmTMB` attaches the environment it was called in to every formula and
+#' `terms` object of the fitted model: the formula in `$call`, the `terms`
+#' attribute of `$frame`, and the formulas in `$modelInfo`. When that
+#' environment binds the full dataset — as [fit_glmmTMB_parallel()]'s
+#' `do.call()` environment does — every fitted model drags a private copy of
+#' the data into session memory and into every `.rds` backup, dwarfing the
+#' model itself (a project-level fit here is ~10 MB of model plus ~34 MB of
+#' captured data; a publication-level one ~130 MB plus ~730 MB). This rebinds
+#' every formula/`terms` environment found in the object to `env`.
+#'
+#' Downstream consumers (`modelsummary`, `marginaleffects`, `update()`,
+#' `predict()`) locate the data by evaluating `call$data`, so stripping is
+#' safe **as long as that symbol resolves in `env`** — which it does when the
+#' model was fitted with `data` passed as a bare global name, or after a
+#' `call$data` repair. Environments of *functions* (including the TMB object
+#' in `$obj`) are never touched: they are functional state, not baggage.
+#'
+#' Already-saved backups are repaired the same way: read, strip, re-save.
+#'
+#' @param x A fitted `glmmTMB` model, or a (possibly named, possibly nested)
+#'   list of them.
+#' @param env Environment to rebind to (default [globalenv()]).
+#' @return `x` with every formula/`terms` environment replaced by `env`.
+#' @seealso [fit_glmmTMB_parallel()], which applies this by default.
+#' @examples
+#' \dontrun{
+#' mods <- read_backup(thisdatadir, "mods_publvl")
+#' mods <- glmmTMB_strip_formula_env(mods)
+#' save_backup(mods, thisdatadir, "mods_publvl") # ~10x smaller
+#' }
+#' @export
+glmmTMB_strip_formula_env <- function(x, env = globalenv()) {
+  if (is.list(x) && !inherits(x, "glmmTMB")) {
+    return(lapply(x, glmmTMB_strip_formula_env, env = env))
+  }
+  stopifnot(inherits(x, "glmmTMB"))
+  strip_formula_envs_impl(x, env)
+}
+
+# Recursively rebind the environment of every formula/terms object found in
+# lists, calls and attributes. Environments and closures are never entered:
+# the TMB object's env is functional state, and function environments must
+# stay intact.
+strip_formula_envs_impl <- function(o, env) {
+  if (is.environment(o) || is.function(o)) {
+    return(o)
+  }
+  if (inherits(o, "formula") || inherits(o, "terms")) {
+    environment(o) <- env
+  } else if (is.call(o)) {
+    for (i in seq_along(o)) {
+      oi <- tryCatch(o[[i]], error = function(e) NULL)
+      if (inherits(oi, "formula")) {
+        environment(oi) <- env
+        o[[i]] <- oi
+      }
+    }
+  } else if (is.list(o)) {
+    for (i in seq_along(o)) {
+      oi <- .subset2(o, i)
+      if (!is.null(oi)) o[[i]] <- strip_formula_envs_impl(oi, env)
+    }
+  }
+  a <- attributes(o)
+  for (an in setdiff(
+    names(a),
+    c("names", "row.names", "class", "dim", "dimnames", "levels", "comment")
+  )) {
+    ai <- a[[an]]
+    if (inherits(ai, "formula") || inherits(ai, "terms") ||
+          is.list(ai) || is.call(ai)) {
+      attr(o, an) <- strip_formula_envs_impl(ai, env)
+    }
+  }
+  o
 }
