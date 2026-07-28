@@ -39,21 +39,37 @@ test_that("flextable_collapse_group replaces several variables with ONE row", {
   expect_true(any(startsWith(terms, "wt")))
 })
 
-test_that("flextable_collapse_group puts the row after the coefficients, above the GOF", {
-  m  <- lm(mpg ~ wt + factor(cyl), data = mtcars)
+test_that("flextable_collapse_group puts the row where the group started", {
+  # cyl comes before gear in the model, so collapsing cyl must land above gear
+  m  <- lm(mpg ~ wt + factor(cyl) + factor(gear), data = mtcars)
   ft <- modelsummary::modelsummary(m, output = "flextable")
+  terms0 <- trimws(as.character(ft$body$dataset[[ft$col_keys[1]]]))
+  i_cyl0 <- match(TRUE, startsWith(terms0, "factor(cyl)"))
+
   out <- flextable_collapse_group(ft, vars = "factor(cyl)", label = "Controls", value = "YES")
   terms <- trimws(as.character(out$body$dataset[[out$col_keys[1]]]))
 
-  i_ctrl <- match("Controls", terms)
-  i_wt   <- match(TRUE, startsWith(terms, "wt"))
-  i_gof  <- match("Num.Obs.", terms)
-  expect_false(is.na(i_gof))
-  # after the last coefficient, before the first GOF statistic
-  expect_gt(i_ctrl, i_wt)
-  expect_lt(i_ctrl, i_gof)
-  # specifically: the row immediately preceding the GOF block
-  expect_equal(i_ctrl, i_gof - 1L)
+  # exactly where the first block of the group was
+  expect_equal(match("Controls", terms), i_cyl0)
+  # so it still precedes the coefficients that followed the group
+  expect_lt(match("Controls", terms), match(TRUE, startsWith(terms, "factor(gear)")))
+  expect_gt(match("Controls", terms), match(TRUE, startsWith(terms, "wt")))
+})
+
+test_that("flextable_collapse_group moves the coefficient/GOF rule, never duplicates it", {
+  m  <- lm(mpg ~ wt + factor(cyl) + factor(gear), data = mtcars)
+  ft <- modelsummary::modelsummary(m, output = "flextable")
+  out <- flextable_collapse_group(ft, vars = "factor(cyl)", label = "A", value = "YES")
+  out <- flextable_collapse_group(out, vars = "factor(gear)", label = "B", value = "YES")
+
+  terms <- trimws(as.character(out$body$dataset[[out$col_keys[1]]]))
+  bottom <- apply(out$body$styles$cells$border.width.bottom$data, 1, max)
+  gof <- match("Num.Obs.", terms)
+
+  # the rule sits on the last coefficient row (our second inserted row), not on
+  # each collapsed row; the final entry is the table's own closing rule
+  expect_equal(which(bottom > 0), c(gof - 1L, length(terms)))
+  expect_equal(terms[gof - 1L], "B")
 })
 
 test_that("flextable_collapse_group keeps the table renderable after insertion", {
@@ -136,11 +152,55 @@ test_that("flextable_collapse_group finds the term column past grouping columns"
   ))
   out <- flextable_collapse_group(ft, vars = "gender", label = "Controls", value = "YES")
   ds  <- out$body$dataset
-  # a bare flextable has no GOF rule, so the collapsed row falls back to the end
-  expect_equal(trimws(as.character(ds$term)), c("(Intercept)", "wt", "Controls"))
+  # the collapsed row sits where the gender block was, between Intercept and wt
+  expect_equal(trimws(as.character(ds$term)), c("(Intercept)", "Controls", "wt"))
   # the grouping column keeps its own content, only the model column gets YES
   expect_equal(trimws(as.character(ds$component)), c("conditional", "", ""))
-  expect_equal(trimws(as.character(ds$m1)), c("1.0", "3.0", "YES"))
+  expect_equal(trimws(as.character(ds$m1)), c("1.0", "YES", "3.0"))
+})
+
+test_that("flextable_drop_component removes a component's rows", {
+  ft <- flextable::flextable(data.frame(
+    component = c("conditional", "", "", "dispersion", "", ""),
+    term      = c("(Intercept)", "", "wt", "(Intercept)", "", "Num.Obs."),
+    m1        = c("1.0", "(0.1)", "2.0", "3.0", "(0.3)", "32"),
+    stringsAsFactors = FALSE
+  ))
+  out <- flextable_drop_component(ft, "dispersion")
+  ds <- out$body$dataset
+  # the dispersion row and its standard-error row go; the GOF row stays
+  expect_equal(trimws(as.character(ds$term)), c("(Intercept)", "", "wt", "Num.Obs."))
+  expect_equal(trimws(as.character(ds$component)), c("conditional", "", "", ""))
+})
+
+test_that("flextable_drop_component keeps the coefficient/GOF rule", {
+  # the rule lives on the last coefficient row, which is the dispersion block:
+  # deleting it must not take the table's only separator away
+  m  <- glmmTMB::glmmTMB(count ~ spp, data = glmmTMB::Salamanders, family = glmmTMB::nbinom2)
+  ft <- modelsummary::modelsummary(list(m), output = "flextable",
+                                   shape = component + term + statistic ~ model)
+  rule_before <- max(ft$body$styles$cells$border.width.bottom$data)
+  expect_gt(rule_before, 0)
+
+  out <- flextable_drop_component(ft, "dispersion")
+  terms <- trimws(as.character(out$body$dataset[[flextable_term_col(out)]]))
+  bottom <- apply(out$body$styles$cells$border.width.bottom$data, 1, max)
+  gof <- match("Num.Obs.", terms)
+
+  expect_false(is.na(gof))
+  # still exactly one rule above the GOF block, on the new last coefficient row
+  expect_gt(bottom[gof - 1L], 0)
+  expect_equal(sum(bottom[seq_len(gof - 2L)] > 0), 0)
+})
+
+test_that("flextable_drop_component warns rather than mangling the table", {
+  ft <- flextable::flextable(data.frame(term = c("a", "b"), est = c("1", "2")))
+  expect_warning(flextable_drop_component(ft, "dispersion"), "No .*component. column")
+  ft2 <- flextable::flextable(data.frame(
+    component = c("conditional", ""), term = c("(Intercept)", "wt"), m1 = c("1", "2"),
+    stringsAsFactors = FALSE
+  ))
+  expect_warning(flextable_drop_component(ft2, "zi"), "No rows for component")
 })
 
 test_that("flextable_collapse_group warns when nothing matches", {

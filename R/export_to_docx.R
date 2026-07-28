@@ -376,11 +376,13 @@ ggplot2docx <- function(
 #' `"start year [2008]"`), which covers `coef_rename = FALSE` tables and
 #' variables whose label was dropped en route (`forcats::fct_drop()` does that).
 #'
-#' The collapsed row is inserted at the **end of the coefficients, immediately
-#' above the goodness-of-fit block**, wherever the collapsed variables happened
-#' to sit — which is where a "Controls: Yes" line belongs. The GOF block is
-#' located from the horizontal rule `modelsummary` draws above it; with no such
-#' rule the row goes at the bottom of the table. Rows whose term cell is empty
+#' The collapsed row takes the **position of the first row of the group**, so it
+#' stays where the reader expects those variables to be. When the group is the
+#' last block of coefficients it therefore ends up just above the
+#' goodness-of-fit statistics, and the coefficient/GOF rule — which
+#' `modelsummary` draws as a bottom border on the last coefficient row, and which
+#' would otherwise be deleted along with that block — is redrawn on whatever row
+#' ends up last. Rows whose term cell is empty
 #' (standard errors, confidence intervals) are removed along with the
 #' coefficient row they belong to. A column that is empty across every collapsed
 #' row keeps its blank cell rather than gaining `value`, so grouping columns
@@ -474,28 +476,204 @@ flextable_collapse_group <- function(tbl, vars, label, value = "Yes",
 
   # columns that are blank on every matched row (grouping columns such as
   # `component`/`effect`) must stay blank on the collapsed row
-  blank_col <- vapply(col_keys, function(ck) {
+  blank_cols <- col_keys[vapply(col_keys, function(ck) {
     all(trimws(as.character(tbl$body$dataset[[ck]]))[rows] == "")
-  }, logical(1))
+  }, logical(1))]
 
-  # Where does the collapsed row go? At the end of the coefficients, just above
-  # the goodness-of-fit block, rather than where the variables happened to sit.
+  flextable_insert_row(tbl, term_col, label, value,
+                       at = rows[1], drop = rows, blank_cols = blank_cols)
+}
+
+#' Drop the rows of one model component from a regression table
+#'
+#' Models with several components — `glmmTMB`'s `dispersion`, a zero-inflation
+#' part, and so on — get one block of rows per component, tagged in a
+#' `component` column when the table was built with a `shape` that includes it.
+#' This removes the block belonging to `component`, together with the
+#' empty-term continuation rows (standard errors) that trail it.
+#'
+#' Useful before dropping the `component` column itself: with only one component
+#' left the column carries no information, but a second `(Intercept)` row would
+#' otherwise read as a duplicate of the first.
+#'
+#' @param tbl A `flextable`, typically from [modelsummary::modelsummary()] with
+#'   `output = "flextable"` and a `shape` including `component`.
+#' @param component Name of the component to remove, e.g. `"dispersion"`.
+#' @param component_col Column key tagging the component (default `"component"`).
+#' @param term_col Column key holding the term text. Detected by default as the
+#'   column carrying `"(Intercept)"`.
+#' @return The modified `flextable`; unchanged, with a warning, when the column
+#'   or the component is not found.
+#' @seealso [flextable_collapse_group()], [flextable_add_row_before_gof()]
+#' @examples
+#' \dontrun{
+#' tbl %>% flextable_drop_component("dispersion")
+#' }
+#' @export
+flextable_drop_component <- function(tbl, component, component_col = "component",
+                                     term_col = NULL) {
+  stopifnot(
+    inherits(tbl, "flextable"),
+    is.character(component), length(component) == 1
+  )
+  if (!component_col %in% tbl$col_keys) {
+    warning("No ", sQuote(component_col), " column; table left unchanged.")
+    return(tbl)
+  }
+  ds <- tbl$body$dataset
+  comp <- trimws(as.character(ds[[component_col]]))
+  starts <- which(comp == component)
+  if (length(starts) == 0) {
+    warning("No rows for component ", sQuote(component), "; table left unchanged.")
+    return(tbl)
+  }
+  if (is.null(term_col)) term_col <- flextable_term_col(tbl)
+  terms <- trimws(as.character(ds[[term_col]]))
+
+  # a component block is its tagged row plus the untagged, blank-term rows that
+  # follow it (standard errors); GOF rows carry a term, so they are never taken
+  rows <- integer(0)
+  for (s in starts) {
+    e <- s
+    while (e < length(terms) && terms[e + 1] == "" && comp[e + 1] == "") e <- e + 1
+    rows <- c(rows, s:e)
+  }
+  rows <- sort(unique(rows))
+
+  # The coefficient/GOF rule is drawn as a bottom border on the last coefficient
+  # row, which is exactly what a trailing component block tends to be: deleting
+  # it would take the table's only separator with it. Note where the GOF block
+  # starts while the rule is still there, then redraw it on whatever row ends up
+  # last above the GOF.
+  bw <- tbl$body$styles$cells[["border.width.bottom"]]$data
+  rule <- if (is.null(bw)) 0 else suppressWarnings(max(bw[rows, , drop = FALSE], na.rm = TRUE))
+  gof_before <- flextable_gof_start(tbl)
+
+  out <- flextable::delete_rows(tbl, i = rows, part = "body")
+
+  if (is.finite(rule) && rule > 0 && !is.na(gof_before)) {
+    target <- gof_before - sum(rows < gof_before) - 1L
+    if (target >= 1L && target <= nrow(out$body$dataset)) {
+      out <- flextable::hline(
+        out, i = target, border = officer::fp_border(width = rule), part = "body"
+      )
+    }
+  }
+  return(out)
+}
+
+#' Add a labelled row just above the goodness-of-fit block
+#'
+#' Puts a single row at the end of the coefficients of a regression table — the
+#' place for a line that describes the specification rather than a coefficient,
+#' such as an exposure offset or a fixed-effect indicator. Nothing is removed;
+#' for folding existing coefficient rows into one, see
+#' [flextable_collapse_group()].
+#'
+#' @param tbl A `flextable`, typically from [modelsummary::modelsummary()] with
+#'   `output = "flextable"`.
+#' @param label Text placed in the term column of the new row.
+#' @param value Text placed in every model column of the new row.
+#' @param term_col Column key holding the term text. Detected by default as the
+#'   column carrying `"(Intercept)"`, falling back to the first column.
+#' @param blank_cols Column keys to leave empty on the new row. By default the
+#'   grouping columns are detected as those blank on most body rows (`component`,
+#'   `effect`), so the value does not spill into them.
+#' @return The modified `flextable`.
+#' @seealso [flextable_collapse_group()], [flextable2docx()]
+#' @examples
+#' \dontrun{
+#' tbl %>% flextable_add_row_before_gof("Exposure offset", "log(years observed)")
+#' }
+#' @export
+flextable_add_row_before_gof <- function(tbl, label, value, term_col = NULL,
+                                         blank_cols = NULL) {
+  stopifnot(
+    inherits(tbl, "flextable"),
+    is.character(label), length(label) == 1,
+    is.character(value), length(value) == 1
+  )
+  col_keys <- tbl$col_keys
+  if (is.null(term_col)) term_col <- flextable_term_col(tbl)
+  if (is.null(blank_cols)) {
+    others <- setdiff(col_keys, term_col)
+    blank_cols <- others[vapply(others, function(ck) {
+      mean(trimws(as.character(tbl$body$dataset[[ck]])) == "") > 0.5
+    }, logical(1))]
+  }
+  flextable_insert_row(tbl, term_col, label, value, blank_cols = blank_cols)
+}
+
+# Column holding the term text: the one carrying "(Intercept)", else the first.
+flextable_term_col <- function(tbl) {
+  hits <- vapply(tbl$col_keys, function(ck) {
+    sum(trimws(as.character(tbl$body$dataset[[ck]])) == "(Intercept)")
+  }, integer(1))
+  if (max(hits) > 0) tbl$col_keys[which.max(hits)] else tbl$col_keys[1]
+}
+
+# Insert one row, optionally dropping `drop` rows in the same pass. `at` is the
+# row index (in the table's current numbering) the new row takes the place of;
+# the default is the start of the GOF block, i.e. the end of the coefficients.
+# Shared by flextable_collapse_group() and flextable_add_row_before_gof().
+flextable_insert_row <- function(tbl, term_col, label, value,
+                                 at = NULL,
+                                 drop = integer(0),
+                                 blank_cols = character(0)) {
+  col_keys <- tbl$col_keys
   gof <- flextable_gof_start(tbl)
   n <- nrow(tbl$body$dataset)
   if (is.na(gof)) gof <- n + 1L
+  if (is.null(at)) at <- gof
 
-  keep <- setdiff(seq_len(n), rows)          # surviving rows, in order
-  pos <- sum(keep < gof)                     # how many of them precede the GOF block
-  # style template: the row the collapsed one will sit under, so it inherits the
-  # look of an ordinary coefficient row rather than a GOF row
-  template <- if (pos > 0) keep[pos] else if (length(keep)) keep[1] else rows[1]
+  # The coefficient/GOF rule is drawn as a bottom border on the last coefficient
+  # row. If that row is inside the block being removed, the rule would vanish
+  # with it, so note its width before the edit and restore it afterwards.
+  bw <- tbl$body$styles$cells[["border.width.bottom"]]$data
+  rule <- if (is.null(bw) || !length(drop)) {
+    0
+  } else {
+    suppressWarnings(max(bw[drop, , drop = FALSE], na.rm = TRUE))
+  }
+  if (!is.finite(rule)) rule <- 0
 
-  # ONE index vector performs the whole edit: matched rows are absent from it and
+  keep <- setdiff(seq_len(n), drop)         # surviving rows, in order
+  pos <- sum(keep < at)                     # how many of them precede `at`
+  # style template: the row the new one will sit under, so it inherits the look
+  # of an ordinary coefficient row rather than a GOF row
+  template <- if (pos > 0) keep[pos] else if (length(keep)) keep[1] else 1L
+
+  # ONE index vector performs the whole edit: dropped rows are absent from it and
   # the template appears twice, which inserts the new row in the right place. No
   # rows are moved afterwards.
   idx <- append(keep, template, after = pos)
   tbl$body <- flextable_subset_body_rows(tbl$body, idx)
   new_row <- pos + 1L
+  # rows above the GOF block afterwards: the survivors plus the inserted one
+  last_coef <- sum(keep < gof) + 1L
+
+  # Keep exactly one coefficient/GOF rule, on the last row above the GOF block.
+  bottom <- tbl$body$styles$cells[["border.width.bottom"]]$data
+  inherited <- if (is.null(bottom)) {
+    0
+  } else {
+    suppressWarnings(max(bottom[new_row, ], na.rm = TRUE))
+  }
+  if (!is.finite(inherited)) inherited <- 0
+  clear <- function(x, i) {
+    flextable::hline(x, i = i, border = officer::fp_border(width = 0), part = "body")
+  }
+  # the inserted row copied the template's rule: take it off the template
+  if (inherited > 0 && new_row > 1L) tbl <- clear(tbl, new_row - 1L)
+  # ... and off the inserted row too, unless it is the one that should carry it
+  if (inherited > 0 && new_row != last_coef) tbl <- clear(tbl, new_row)
+  # the rule went out with the deleted block: draw it where it belongs now
+  width <- max(rule, inherited)
+  if (width > 0 && last_coef >= 1L && last_coef <= nrow(tbl$body$dataset)) {
+    tbl <- flextable::hline(
+      tbl, i = last_coef, border = officer::fp_border(width = width), part = "body"
+    )
+  }
 
   # fill the inserted row
   tbl <- flextable::compose(tbl, i = new_row, j = term_col,
@@ -503,7 +681,7 @@ flextable_collapse_group <- function(tbl, vars, label, value = "Yes",
                             part = "body")
   tbl$body$dataset[[term_col]][new_row] <- label
   for (ck in setdiff(col_keys, term_col)) {
-    txt <- if (isTRUE(blank_col[[ck]])) "" else value
+    txt <- if (ck %in% blank_cols) "" else value
     tbl <- flextable::compose(tbl, i = new_row, j = ck,
                               value = flextable::as_paragraph(txt),
                               part = "body")
