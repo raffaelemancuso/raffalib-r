@@ -39,7 +39,6 @@ Imports:
     officer,
     optimx,
     parallel,
-    plyr,
     reformulas,
     rlang,
     rlist,

@@ -68,13 +68,24 @@ modelsummary_common_coefs_at_bottom <- function(mods, coef_rename=TRUE, include_
 
 #' Get goodness-of-fit map for modelsummary, as a list of lists
 #'
+#' The entry order is significant: `modelsummary()` prints the goodness-of-fit
+#' rows in the order they appear in `gof_map`. This preserves
+#' [modelsummary::gof_map]'s own curated order, which groups the statistics
+#' sensibly (`nobs`, then the R2 family with `r.squared` ahead of
+#' `adj.r.squared`, then information criteria, then the rest). Splitting the
+#' data frame with `plyr::dlply()` used to alphabetise it, which put
+#' "R2 Adj." above "R2" and "Num.Obs." in the middle of the block.
+#'
 #' @return A list of lists to be passed to the `gof_map` argument of `modelsummary()`
 #' @export
 modelsummary_getgofmap <- function() {
-  gof_map <- modelsummary::gof_map %>%
+  gof_df <- modelsummary::gof_map %>%
     dplyr::filter(!omit) %>%
-    dplyr::select(-omit) %>%
-    plyr::dlply(1, c)
+    dplyr::select(-omit)
+  gof_map <- stats::setNames(
+    lapply(seq_len(nrow(gof_df)), function(i) as.list(gof_df[i, , drop = FALSE])),
+    gof_df$raw
+  )
   gof_map$nobs$fmt <- \(x) formatC(x, digits = 0, big.mark = ",", format = "d")
   gof_map$aic$fmt <- \(x) formatC(x, digits = 0, big.mark = ",", format = "f")
   gof_map$bic$fmt <- \(x) formatC(x, digits = 0, big.mark = ",", format = "f")
@@ -120,6 +131,57 @@ modelsummary_name_models_list <- function(mods_list, df) {
     unlist() %>%
     raffalib::list_rename_values(labelled::get_variable_labels(df))
   return(mods_list)
+}
+
+#' Build a `coef_rename` lookup from a data frame's variable labels
+#'
+#' `coef_rename = TRUE` asks [modelsummary::modelsummary()] to take labels from
+#' the `parameters` package, which only reaches model classes `parameters`
+#' supports. Custom model objects — a 2SLS wrapper, say — are extracted through
+#' `broom` instead and come back with raw term names such as `genderM` or
+#' `publication_type_detailedConfProc`, so those tables end up looking unlike
+#' every other table in the same paper. This builds the lookup explicitly from
+#' the labelled data instead.
+#'
+#' Factor levels are expanded so the result matches the style
+#' `coef_rename = TRUE` produces: a `gender` column labelled `"Gender"` with
+#' levels `F`/`M` yields `genderF -> "Gender [F]"` and `genderM -> "Gender [M]"`.
+#' Logical columns get their `TRUE` term mapped to the bare label, which is what
+#' a dummy regressor needs. Entries are returned longest-key-first so a
+#' level-specific key is substituted before the bare variable name it contains.
+#'
+#' @param df A data frame carrying variable labels (see [labelled::var_label()]).
+#' @param extra Optional named character vector merged in last, for terms the
+#'   labels do not cover.
+#' @return A named character vector suitable for the `coef_rename` argument of
+#'   [modelsummary::modelsummary()].
+#' @seealso [modelsummary_build_coef_map()], which builds a `coef_map` from
+#'   fitted models rather than from the data.
+#' @examples
+#' \dontrun{
+#' modelsummary(mods, coef_rename = modelsummary_coef_rename_from_labels(pis))
+#' }
+#' @export
+modelsummary_coef_rename_from_labels <- function(df, extra = NULL) {
+  stopifnot(is.data.frame(df))
+  labs <- labelled::var_label(df)
+  labs <- labs[!vapply(labs, is.null, logical(1))]
+  out <- character(0)
+  for (v in names(labs)) {
+    lab <- as.character(labs[[v]])[1]
+    if (is.na(lab) || !nzchar(lab)) next
+    x <- df[[v]]
+    if (is.factor(x)) {
+      lv <- levels(x)
+      if (length(lv)) out[paste0(v, lv)] <- paste0(lab, " [", lv, "]")
+    } else if (is.logical(x)) {
+      out[paste0(v, "TRUE")] <- lab
+    }
+    out[v] <- lab
+  }
+  if (!is.null(extra)) out[names(extra)] <- as.character(extra)
+  # longest first: `genderM` must be replaced before the `gender` it contains
+  out[order(nchar(names(out)), decreasing = TRUE)]
 }
 
 #' Build a labelled coefficient map from a list of models
