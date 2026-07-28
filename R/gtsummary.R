@@ -229,11 +229,11 @@ gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
         tbl$table_body |>
           filter(variable == !!variable) |>
           pull(var_level) |>
-          na.omit() |>
+          stats::na.omit() |>
           first(),
         error = function(e) NA_character_
       )
-      if (is.null(lev) || is.na(lev) || !(lev %in% names(d))) lev <- tail(names(d), 1)
+      if (is.null(lev) || is.na(lev) || !(lev %in% names(d))) lev <- utils::tail(names(d), 1)
       return(d[lev])
     },
     {

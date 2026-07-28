@@ -24,6 +24,7 @@
 ## usethis namespace: end
 NULL
 
-# Non-standard-evaluation column names referenced inside dplyr/modelsummary
-# verbs, declared here so R CMD check does not flag them as undefined globals.
-utils::globalVariables(c(".", "na", "omit"))
+# Non-standard-evaluation column names referenced inside dplyr/modelsummary/
+# gtsummary verbs, declared here so R CMD check does not flag them as
+# undefined globals.
+utils::globalVariables(c(".", "na", "omit", "var_type", "var_level"))

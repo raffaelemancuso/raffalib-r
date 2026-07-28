@@ -6,3 +6,5 @@
 ^\.github$
 ^raffalib_.*\.pdf$
 ^_pkgdown\.yml$
+^CLAUDE\.md$
+^LICENSE\.txt$

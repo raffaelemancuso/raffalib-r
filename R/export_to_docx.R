@@ -200,7 +200,7 @@ finalize_docx <- function(outs, outfp) {
         outfp
       )
       warning(sprintf(
-        "Could not write '%s' (%s). Wrote '%s' instead — close the open file and re-run to overwrite.",
+        "Could not write '%s' (%s). Wrote '%s' instead \u2014 close the open file and re-run to overwrite.",
         outfp, conditionMessage(e), alt
       ), call. = FALSE)
       print(doc, target = alt)
@@ -259,7 +259,7 @@ plot2docx <- function(
     )
   }
 
-  if(class(gg)=="tmap") {
+  if(inherits(gg, "tmap")) {
     stop(
       "Class tmap is unsupported of its own. Please pass officer::plot_instr(print(plt))."
     )

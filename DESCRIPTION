@@ -16,6 +16,8 @@ Authors@R:
 License: GPL-3
 URL: https://github.com/raffaelemancuso/raffalib-r
 BugReports: https://github.com/raffaelemancuso/raffalib-r/issues
+Depends:
+    R (>= 4.1.0)
 Imports:
     calibrar,
     cli,
@@ -58,7 +60,8 @@ Suggests:
     future.apply,
     ggplot2,
     ivreg,
-    MASS
+    MASS,
+    withr
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Config/roxygen2/version: 8.0.0
