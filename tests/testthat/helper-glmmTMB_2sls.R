@@ -43,6 +43,39 @@ sim_clustered <- function(n_g = 250, m = 15, beta = 1.0, rho = 0.6, seed = 7) {
   y <- 1.0 + beta * x - 0.5 * w + rho * u + ag + rnorm(N)
   data.frame(y, x, z, w, g = factor(g))
 }
+# Over-identified linear IV: two instruments (z1, z2) for one endogenous x, plus
+# an exogenous control w. `gamma` gives z2 a DIRECT effect on the outcome, which
+# violates the exclusion restriction and is precisely what a Sargan test exists
+# to detect; gamma = 0 leaves both instruments valid. `hetero = TRUE` makes the
+# structural error's variance depend on w, so iid and HC1 standard errors part
+# company and a bootstrap should track the latter.
+sim_overid <- function(n = 3000, beta = 1.5, rho = 0.7, gamma = 0,
+                       hetero = FALSE, seed = 42) {
+  set.seed(seed)
+  z1 <- rnorm(n); z2 <- rnorm(n); w <- rnorm(n); u <- rnorm(n)
+  x  <- 0.5 + 0.8 * z1 + 0.6 * z2 + 0.5 * w + rho * u + rnorm(n)
+  s  <- if (hetero) exp(0.5 * w) else 1
+  y  <- 1.0 + beta * x - 0.8 * w + gamma * z2 + rho * u + s * rnorm(n)
+  data.frame(y, x, z1, z2, w)
+}
+
+# ivreg's diagnostics table: rows "Weak instruments", "Wu-Hausman", "Sargan",
+# columns "df1", "df2", "statistic", "p-value".
+iv_diag <- function(fit) summary(fit, diagnostics = TRUE)$diagnostics
+
+# residual SD on each fit's own residual df -- the quantity that separates the
+# augmented control-function regression's SEs from the 2SLS ones
+resid_sd <- function(fit) sqrt(sum(stats::residuals(fit)^2) / stats::df.residual(fit))
+
+# glmmTMB estimates sigma by ML (RSS/n) where lm/ivreg use RSS/(n - p), so every
+# glmmTMB-based SE is smaller by sqrt((n - p)/n) and every Wald chi2 built from
+# one is larger by n/(n - p). p counts the augmented second-stage fixed effects,
+# the control-function term included.
+ml_df_factor <- function(m) {
+  n <- stats::nobs(m$second_stage)
+  n / (n - nrow(m$coeftable))
+}
+
 sim_zinb <- function(n = 5000, beta = 0.3, rho = 0.5, seed = 8) {
   set.seed(seed)
   z <- rnorm(n); w <- rnorm(n); u <- rnorm(n)

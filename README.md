@@ -69,8 +69,14 @@ columns or cells it changed.
   reproduces textbook 2SLS; for count/binary outcomes it is the consistent
   alternative to the "forbidden regression". Returns an object with
   `print`/`tidy`/`glance`/`nobs` methods, so it flows straight into
-  `modelsummary()`, and offers cluster-bootstrap standard errors that correct
-  for the generated regressor.
+  `modelsummary()`. The control-function residual is a *generated* regressor, so
+  naive second-stage SEs are invalid: a linear fit gets the exact analytic 2SLS
+  covariance instead (iid, HC0/HC1 or clustered, via `vcov_type`), and a
+  non-linear one can fall back on cluster-bootstrap SEs. Reports the three
+  standard IV diagnostics —
+  first-stage weak-instrument F, Wu-Hausman, and (for over-identified linear
+  models) Sargan — each validated against `ivreg`, `AER`, `fixest` and
+  `estimatr` in `tests/testthat/test-glmmTMB_2sls-benchmarks.R`.
 - **Alternative optimizers** — three families of `glmmTMBControl()` constructors
   that swap in optimizers from `optimx` and `calibrar` when the default
   `nlminb()` struggles to converge:
@@ -103,12 +109,12 @@ Fit an IV model whose second stage is a Poisson `glmmTMB`:
 
 ```r
 m <- glmmTMB_2sls(
-  first_stage  = x ~ z + w,   # endogenous x, instrument z, control w
+  first_stage  = x ~ z1 + z2 + w,  # endogenous x, instruments z1/z2, control w
   second_stage = y ~ x + w,
   data = d, family = poisson(),
-  instruments = "z", n_boot = 200
+  n_boot = 200                     # instruments are derived from the formulas
 )
-m                 # weak-instrument and Wu-Hausman diagnostics
+m                 # weak-instrument F, Wu-Hausman and (if linear) Sargan
 generics::tidy(m) # ready for modelsummary()
 ```
 

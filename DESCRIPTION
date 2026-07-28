@@ -39,6 +39,7 @@ Imports:
     officer,
     optimx,
     parallel,
+    parameters,
     reformulas,
     rlang,
     rlist,
@@ -49,11 +50,14 @@ Imports:
     utils
 Suggests:
     testthat (>= 3.0.0),
+    AER,
     codetools,
+    estimatr,
     fixest,
     future,
     future.apply,
     ggplot2,
+    ivreg,
     MASS
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

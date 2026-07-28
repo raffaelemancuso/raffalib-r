@@ -3,6 +3,7 @@
 S3method(generics::glance,glmmTMB_2sls)
 S3method(generics::tidy,glmmTMB_2sls)
 S3method(nobs,glmmTMB_2sls)
+S3method(parameters::model_parameters,glmmTMB_2sls)
 S3method(print,glmmTMB_2sls)
 export(as_named_list)
 export(catcols)
