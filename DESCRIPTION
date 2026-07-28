@@ -60,7 +60,10 @@ Suggests:
     future.apply,
     ggplot2,
     ivreg,
+    ivtools,
+    lfe,
     MASS,
+    plm,
     withr
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

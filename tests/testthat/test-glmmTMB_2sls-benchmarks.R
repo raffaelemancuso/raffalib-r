@@ -2,9 +2,13 @@
 # is provably textbook 2SLS -- an identity-link Gaussian second stage fitted off
 # an OLS first stage -- every number it reports has a closed-form counterpart in
 # an established IV package, so these are checks of NUMERICAL IDENTITY against
-# ivreg, AER, fixest and estimatr, not "close enough" comparisons. The residual
-# gap is glmmTMB's optimiser tolerance (~1e-6 relative), not a difference
-# between estimators; tolerances are set an order of magnitude above it.
+# ivreg, AER, fixest, estimatr, lfe and plm, not "close enough" comparisons. The
+# residual gap is glmmTMB's optimiser tolerance (~1e-6 relative), not a
+# difference between estimators; tolerances are set an order of magnitude above
+# it. The non-linear path (Poisson, logit) is validated against ivtools, whose
+# ivglm(estmethod = "ts", ctrl = TRUE) is the same control-function estimator
+# and whose stacked estimating-equation sandwich is the analytic counterpart of
+# the bootstrap standard errors.
 #
 # Two deliberate discrepancies are asserted rather than papered over:
 #   * glmmTMB fits sigma by ML (RSS/n) where lm/ivreg use RSS/(n - p). Its naive
@@ -451,4 +455,113 @@ test_that("print() surfaces all three diagnostics", {
   expect_match(out, "Weak instruments \\(z1, z2\\): F\\(2, ")
   expect_match(out, "Wu-Hausman")
   expect_match(out, "Overidentification \\(Sargan\\)")
+})
+
+
+# --- further implementations: lfe, plm --------------------------------------
+
+test_that("linear CF equals lfe::felm, coefficients and iid SEs", {
+  skip_if_not_installed("lfe")
+  d  <- sim_overid()
+  m  <- glmmTMB_2sls(fs_formula_iv, ss_formula_iv, data = d, family = gaussian())
+  fe <- lfe::felm(y ~ w | 0 | (x ~ z1 + z2), data = d)
+  b  <- coef(fe); se <- sqrt(diag(vcov(fe)))       # endogenous term is "`x(fit)`"
+  key <- c("(Intercept)" = "(Intercept)", x = "`x(fit)`", w = "w")
+  for (k in names(key)) {
+    expect_true(approx2(cf_beta(m)[[k]], b[[key[[k]]]], 1e-4),
+                info = sprintf("coef %s: CF=%.8f felm=%.8f", k, cf_beta(m)[[k]], b[[key[[k]]]]))
+    expect_true(approx2(cf_se(m)[[k]], se[[key[[k]]]], 1e-4),
+                info = sprintf("se %s: CF=%.8f felm=%.8f", k, cf_se(m)[[k]], se[[key[[k]]]]))
+  }
+})
+
+test_that("linear CF equals plm's pooled IV, coefficients and SEs", {
+  skip_if_not_installed("plm")
+  d <- sim_overid()
+  d$id <- seq_len(nrow(d)); d$t <- 1L
+  m  <- glmmTMB_2sls(fs_formula_iv, ss_formula_iv, data = d, family = gaussian())
+  # pooled-model IV estimation (Balestra-Varadharajan-Krishnakumar collapses to
+  # plain 2SLS when there is no panel structure to transform away)
+  pm <- plm::plm(y ~ x + w | z1 + z2 + w, data = d, model = "pooling",
+                 index = c("id", "t"))
+  ct <- coef(summary(pm))
+  for (k in names(cf_beta(m))) {
+    expect_true(approx2(cf_beta(m)[[k]], ct[k, "Estimate"], 1e-4),
+                info = sprintf("coef %s: CF=%.8f plm=%.8f", k, cf_beta(m)[[k]], ct[k, "Estimate"]))
+    expect_true(approx2(cf_se(m)[[k]], ct[k, "Std. Error"], 1e-4),
+                info = sprintf("se %s: CF=%.8f plm=%.8f", k, cf_se(m)[[k]], ct[k, "Std. Error"]))
+  }
+})
+
+
+# --- the non-linear path against ivtools ------------------------------------
+# ivtools::ivglm(estmethod = "ts", ctrl = TRUE) is the same control-function
+# estimator, parameterised on the first-stage FITTED VALUES plus the residual
+# instead of the raw regressor plus the residual: substituting x = xhat + r
+# shows the two models are identical, with ivtools' R coefficient equal to
+# b_x + b_cf and every structural coefficient unchanged. That identity is
+# asserted too. Its variance comes from stacking both stages' estimating
+# equations into one sandwich, so it accounts for the generated regressor
+# analytically -- the benchmark the bootstrap SEs are checked against, on the
+# path where raffalib has no analytic form of its own.
+
+test_that("linear CF equals ivtools' control function, reparameterisation included", {
+  skip_if_not_installed("ivtools")
+  d <- sim_overid()
+  m <- glmmTMB_2sls(fs_formula_iv, ss_formula_iv, data = d, family = gaussian())
+  ts <- ivtools::ivglm(estmethod = "ts",
+                       fitX.LZ = glm(x ~ z1 + z2 + w, data = d),
+                       fitY.LX = glm(y ~ x + w, data = d),
+                       data = d, ctrl = TRUE)
+  for (k in names(cf_beta(m)))
+    expect_true(approx2(cf_beta(m)[[k]], ts$est[[k]], 1e-4),
+                info = sprintf("coef %s: CF=%.8f ivtools=%.8f", k, cf_beta(m)[[k]], ts$est[[k]]))
+  b_cf <- m$coeftable["cond::cf_resid", "estimate"]
+  expect_true(approx2(cf_beta(m)[["x"]] + b_cf, ts$est[["R"]], 1e-4),
+              info = sprintf("b_x+b_cf=%.8f ivtools R=%.8f",
+                             cf_beta(m)[["x"]] + b_cf, ts$est[["R"]]))
+})
+
+test_that("Poisson CF equals ivtools; bootstrap SEs track its two-stage sandwich", {
+  skip_if_not_installed("ivtools")
+  d <- sim_count(beta = 0.4)
+  m <- glmmTMB_2sls(x ~ z + w, ss_formula_iv, data = d, family = poisson(),
+                    n_boot = 150, parallel = FALSE, seed = 11)
+  ts <- ivtools::ivglm(estmethod = "ts",
+                       fitX.LZ = glm(x ~ z + w, data = d),
+                       fitY.LX = glm(y ~ x + w, family = poisson, data = d),
+                       data = d, ctrl = TRUE)
+  se_ts <- sqrt(diag(ts$vcov))
+  for (k in names(cf_beta(m))) {
+    expect_true(approx2(cf_beta(m)[[k]], ts$est[[k]], 1e-4),
+                info = sprintf("coef %s: CF=%.8f ivtools=%.8f", k, cf_beta(m)[[k]], ts$est[[k]]))
+    r <- cf_se(m)[[k]] / se_ts[[k]]
+    expect_true(r > 0.8 && r < 1.25,
+                info = sprintf("se %s: boot=%.6f sandwich=%.6f ratio=%.3f",
+                               k, cf_se(m)[[k]], se_ts[[k]], r))
+  }
+  # and the naive SE on the endogenous regressor really is too small: the
+  # sandwich propagates first-stage noise that the model-based SE ignores
+  se_naive <- summary(m$second_stage)$coefficients$cond["x", "Std. Error"]
+  expect_lt(se_naive, se_ts[["x"]])
+})
+
+test_that("logit CF equals ivtools (Rivers-Vuong); bootstrap SEs track its sandwich", {
+  skip_if_not_installed("ivtools")
+  d <- sim_bin(beta = 0.8)
+  m <- glmmTMB_2sls(x ~ z + w, ss_formula_iv, data = d, family = binomial(),
+                    n_boot = 150, parallel = FALSE, seed = 12)
+  ts <- ivtools::ivglm(estmethod = "ts",
+                       fitX.LZ = glm(x ~ z + w, data = d),
+                       fitY.LX = glm(y ~ x + w, family = binomial, data = d),
+                       data = d, ctrl = TRUE)
+  se_ts <- sqrt(diag(ts$vcov))
+  for (k in names(cf_beta(m))) {
+    expect_true(approx2(cf_beta(m)[[k]], ts$est[[k]], 1e-4),
+                info = sprintf("coef %s: CF=%.8f ivtools=%.8f", k, cf_beta(m)[[k]], ts$est[[k]]))
+    r <- cf_se(m)[[k]] / se_ts[[k]]
+    expect_true(r > 0.8 && r < 1.25,
+                info = sprintf("se %s: boot=%.6f sandwich=%.6f ratio=%.3f",
+                               k, cf_se(m)[[k]], se_ts[[k]], r))
+  }
 })

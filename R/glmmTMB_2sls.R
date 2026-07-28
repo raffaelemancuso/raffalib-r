@@ -60,7 +60,9 @@
 #' where the residual is not the structural error and Sargan's \eqn{n R^2} has no
 #' standing. `tests/testthat/test-glmmTMB_2sls-benchmarks.R` checks the
 #' coefficients, standard errors and all three diagnostics against
-#' \pkg{ivreg}, \pkg{AER}, \pkg{fixest} and \pkg{estimatr}.
+#' \pkg{ivreg}, \pkg{AER}, \pkg{fixest}, \pkg{estimatr}, \pkg{lfe} and
+#' \pkg{plm}, and the non-linear path (coefficients and bootstrap standard
+#' errors) against \pkg{ivtools}' two-stage control-function estimator.
 #'
 #' @param first_stage Formula for the first stage; the LHS must be the single
 #'   endogenous regressor.

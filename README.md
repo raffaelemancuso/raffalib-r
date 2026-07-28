@@ -75,8 +75,10 @@ columns or cells it changed.
   non-linear one can fall back on cluster-bootstrap SEs. Reports the three
   standard IV diagnostics —
   first-stage weak-instrument F, Wu-Hausman, and (for over-identified linear
-  models) Sargan — each validated against `ivreg`, `AER`, `fixest` and
-  `estimatr` in `tests/testthat/test-glmmTMB_2sls-benchmarks.R`.
+  models) Sargan. The linear path is validated against `ivreg`, `AER`,
+  `fixest`, `estimatr`, `lfe` and `plm`, and the non-linear path (coefficients
+  and bootstrap SEs) against `ivtools`' two-stage control-function estimator,
+  in `tests/testthat/test-glmmTMB_2sls-benchmarks.R`.
 - **Alternative optimizers** — three families of `glmmTMBControl()` constructors
   that swap in optimizers from `optimx` and `calibrar` when the default
   `nlminb()` struggles to converge:
