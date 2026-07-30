@@ -270,6 +270,38 @@ gtsummary_rename_column <- function(tbl, old, new) {
   return(tbl)
 }
 
+#' Collapse line breaks in a gtsummary table's footnotes
+#'
+#' [gtsummary::tbl_summary()] builds the default header footnote by gluing the
+#' statistic labels into the statistic template, so a literal `\\n` used in the
+#' template to stack cell contents (e.g. `"{mean}\\n({sd})"` becomes
+#' `"Mean\\n(SD)"`) leaks into the footnote, which then renders across several
+#' lines in the exported table. This helper replaces every line break in the
+#' header and body footnotes with `replacement`, leaving the cell layout
+#' untouched.
+#'
+#' @param tbl A `gtsummary` table.
+#' @param replacement String substituted for each line break. Default `" "`.
+#' @return The `gtsummary` table with single-line footnotes.
+#' @export
+gtsummary_collapse_footnote_newlines <- function(tbl, replacement = " ") {
+  stopifnot(inherits(tbl, "gtsummary"))
+  for (el in c("footnote_header", "footnote_body")) {
+    if (
+      !is.null(tbl$table_styling[[el]]) &&
+        "footnote" %in% colnames(tbl$table_styling[[el]])
+    ) {
+      tbl$table_styling[[el]]$footnote <-
+        stringr::str_replace_all(
+          tbl$table_styling[[el]]$footnote,
+          "\r?\n",
+          replacement
+        )
+    }
+  }
+  return(tbl)
+}
+
 #' Add a between-group difference column to a gtsummary table
 #'
 #' Adds a column of group differences computed by [gtsummary_mean_diff()] to a
@@ -278,13 +310,18 @@ gtsummary_rename_column <- function(tbl, old, new) {
 #' in means (sigfig format); categorical and dichotomous rows carry the 0-1
 #' proportion difference from [gtsummary_mean_diff()] and are formatted as
 #' 0%-100% percentages with 2 decimal places (e.g. `15.23%`).
+#' An explanatory footnote is attached to the column header; when the two
+#' `by`-group levels can be recovered from the table, the footnote names them
+#' and the direction of the difference (second level minus first).
 #' See <https://stackoverflow.com/a/79876424/1719931>.
 #'
 #' @param table A two-group `gtsummary` table.
+#' @param footnote Footnote for the difference column: `TRUE` (default) adds
+#'   an auto-built explanation, a string is used as-is, `FALSE` adds none.
 #' @return The table with an added `diff_in_means` column.
 #' @seealso [gtsummary_mean_diff()], [gtsummary_rename_column()]
 #' @export
-gtsummary_add_mean_diff <- function(table) {
+gtsummary_add_mean_diff <- function(table, footnote = TRUE) {
 
   x <- gtsummary::add_stat(
     table,
@@ -296,7 +333,7 @@ gtsummary_add_mean_diff <- function(table) {
     )
   ) %>%
     gtsummary_rename_column("add_stat_1", "diff_in_means") %>%
-    gtsummary::modify_header(diff_in_means = "**Diff / Diff %**") %>%
+    gtsummary::modify_header(diff_in_means = "**Δ / Δ%**") %>%
     # continuous rows: difference in means, plain sigfig
     gtsummary::modify_fmt_fun(
       diff_in_means = gtsummary::label_style_sigfig(),
@@ -311,6 +348,37 @@ gtsummary_add_mean_diff <- function(table) {
       },
       rows = var_type %in% c("categorical", "dichotomous")
     )
+
+  # explanatory footnote on the difference column ------------------------------
+  if (isTRUE(footnote)) {
+    # name the by-group levels when they can be recovered from the table;
+    # gtsummary_mean_diff() computes second level minus first
+    by_levels <- tryCatch(
+      {
+        by <- table$inputs$by
+        g <- table$inputs$data[[by]]
+        if (is.factor(g)) levels(g) else sort(unique(stats::na.omit(g)))
+      },
+      error = function(e) NULL
+    )
+    footnote <-
+      if (!is.null(by_levels) && length(by_levels) == 2) {
+        sprintf(
+          "Δ / Δ%%: difference between the two groups (%s minus %s): difference in means for continuous variables, difference in proportions in percentage points for categorical and dichotomous variables.",
+          by_levels[2], by_levels[1]
+        )
+      } else {
+        "Δ / Δ%: difference between the two groups (second minus first): difference in means for continuous variables, difference in proportions in percentage points for categorical and dichotomous variables."
+      }
+  }
+  if (is.character(footnote)) {
+    x <- gtsummary::modify_footnote_header(
+      x,
+      footnote = footnote,
+      columns = "diff_in_means",
+      replace = FALSE
+    )
+  }
 
   return(x)
 }
