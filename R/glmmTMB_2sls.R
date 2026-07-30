@@ -491,6 +491,10 @@ glance.glmmTMB_2sls <- function(x, ...) {
 #' @export
 nobs.glmmTMB_2sls <- function(object, ...) stats::nobs(object$second_stage)
 
+#' @importFrom stats family
+#' @export
+family.glmmTMB_2sls <- function(object, ...) stats::family(object$second_stage)
+
 #' Extract model parameters from a control-function 2SLS fit
 #'
 #' Registers [parameters::model_parameters()] for `glmmTMB_2sls`, which puts the
