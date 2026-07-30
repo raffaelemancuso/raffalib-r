@@ -20,7 +20,9 @@
 #'
 #' Companion to [save_backup()]. Searches `dirpath` for files named
 #' `"<filestem>_YYYY-MM-DD_HH-MM-SS.rds"` and reads back the most recent one
-#' (newest time stamp by natural sort).
+#' (newest time stamp by natural sort). The stem is matched exactly
+#' (anchored), so one stem cannot match inside another (e.g. `"pis"` inside
+#' `"ai_pis"`).
 #'
 #' @param dirpath Directory to search for backups.
 #' @param filestem The file stem used when the backup was written.
@@ -32,12 +34,12 @@
 read_backup <- function(dirpath, filestem) {
   infp <- dirpath %>% list.files() %>%
     str_subset(glue(
-      "{filestem}_\\d{{4}}-\\d{{2}}-\\d{{2}}_\\d{{2}}-\\d{{2}}-\\d{{2}}\\.rds"
+      "^{filestem}_\\d{{4}}-\\d{{2}}-\\d{{2}}_\\d{{2}}-\\d{{2}}-\\d{{2}}\\.rds$"
     )) %>%
     str_sort(numeric = TRUE, decreasing = TRUE) %>%
     head(1)
   if(length(infp)==0) {
-    stop(glue("No file found in {infp}"))
+    stop(glue("No \"{filestem}\" backup found in \"{dirpath}\""))
   }
   infp <- file.path(dirpath, infp)
   cat(glue("Reading \"{infp}\""))
