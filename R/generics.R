@@ -19,8 +19,9 @@
 #' Read the most recent time-stamped backup of an object
 #'
 #' Companion to [save_backup()]. Searches `dirpath` for files named
-#' `"<filestem>_YYYY-MM-DD_HH-MM-SS.rds"` and reads back the most recent one
-#' (newest time stamp by natural sort). The stem is matched exactly
+#' `"<filestem>_YYYY-MM-DD_HH-MM-SS.rds"` (any [saveRDS()] compression) or
+#' `".qs2"` and reads back the most recent one (newest time stamp by natural
+#' sort), choosing the reader from the extension. The stem is matched exactly
 #' (anchored), so one stem cannot match inside another (e.g. `"pis"` inside
 #' `"ai_pis"`).
 #'
@@ -38,17 +39,27 @@ read_backup <- function(dirpath, filestem) {
   }
   infp <- file.path(dirpath, infp)
   cat(glue("Reading \"{infp}\""))
+  if (endsWith(infp, ".qs2")) {
+    if (!requireNamespace("qs2", quietly = TRUE)) {
+      stop(glue(
+        "Backup \"{infp}\" was written with format = \"qs2\": ",
+        "install the qs2 package to read it."
+      ))
+    }
+    return(qs2::qs_read(infp))
+  }
   return(readRDS(infp))
 }
 
 
 # File names (not paths) of the existing backups of `filestem` in `dirpath`,
-# newest first. The stem is matched exactly (anchored), so one stem cannot
-# match inside another (e.g. "pis" inside "ai_pis").
+# newest first, across all backup formats (.rds and .qs2). The stem is
+# matched exactly (anchored), so one stem cannot match inside another
+# (e.g. "pis" inside "ai_pis").
 .list_backups <- function(dirpath, filestem) {
   dirpath %>% list.files() %>%
     str_subset(glue(
-      "^{filestem}_\\d{{4}}-\\d{{2}}-\\d{{2}}_\\d{{2}}-\\d{{2}}-\\d{{2}}\\.rds$"
+      "^{filestem}_\\d{{4}}-\\d{{2}}-\\d{{2}}_\\d{{2}}-\\d{{2}}-\\d{{2}}\\.(rds|qs2)$"
     )) %>%
     str_sort(numeric = TRUE, decreasing = TRUE)
 }
@@ -87,25 +98,56 @@ read_backup <- function(dirpath, filestem) {
 #' @param max_backups Maximum number of backups kept for `file_stem`: after a
 #'   successful save, the oldest backups beyond this count are deleted.
 #'   Default `5`; `NULL` deactivates the rotation and keeps every backup.
+#' @param format Serialisation format. One of:
+#'   * `"rds_zstd"` (default) — [saveRDS()] with Zstandard compression
+#'     (needs R >= 4.5): gzip-sized files at roughly half the write time.
+#'   * `"rds_gzip"` — [saveRDS()] with its default gzip compression.
+#'   * `"rds_uncompressed"` — [saveRDS()] without compression: fastest of the
+#'     rds variants, largest files.
+#'   * `"qs2"` — [qs2::qs_save()], multithreaded: by far the fastest and the
+#'     smallest, but the backup can only be read where the `qs2` package is
+#'     available. Files get a `.qs2` extension instead of `.rds`.
+#'
+#'   All four formats are byte-deterministic, so the `refuse_identical`
+#'   comparison works with each. The comparison is bytewise, however, so an
+#'   object identical to the newest backup but saved under a different
+#'   `format` is written as a new backup, not refused.
 #' @return Invisibly, the path of the written backup file — or, when the save
 #'   is refused because the newest same-stem backup is identical, the path of
 #'   that existing backup.
 #' @seealso [read_backup()]
 #' @export
 save_backup <- function(obj, out_dir, file_stem, refuse_identical = TRUE,
-                        max_backups = 5) {
+                        max_backups = 5,
+                        format = c("rds_zstd", "rds_gzip",
+                                   "rds_uncompressed", "qs2")) {
+  format <- match.arg(format)
   stopifnot(dir.exists(out_dir))
   stopifnot(
     is.null(max_backups) ||
       (is.numeric(max_backups) && length(max_backups) == 1 && max_backups >= 1)
   )
+  if (format == "qs2" && !requireNamespace("qs2", quietly = TRUE)) {
+    stop("format = \"qs2\" needs the qs2 package: install it first.")
+  }
+
+  ext <- if (format == "qs2") ".qs2" else ".rds"
+  write_fun <- switch(
+    format,
+    rds_zstd         = function(o, f) saveRDS(o, f, compress = "zstd"),
+    rds_gzip         = function(o, f) saveRDS(o, f, compress = "gzip"),
+    rds_uncompressed = function(o, f) saveRDS(o, f, compress = FALSE),
+    qs2              = function(o, f) {
+      qs2::qs_save(o, f, nthreads = max(1L, parallel::detectCores() - 2L))
+    }
+  )
 
   tmp_fp <- NULL
   if (isTRUE(refuse_identical)) {
     # serialise first, so the candidate can be hashed before touching out_dir
-    tmp_fp <- tempfile(fileext = ".rds")
+    tmp_fp <- tempfile(fileext = ext)
     on.exit(unlink(tmp_fp), add = TRUE)
-    saveRDS(obj, tmp_fp)
+    write_fun(obj, tmp_fp)
 
     latest_fn <- .list_backups(out_dir, file_stem) %>% head(1)
     if (length(latest_fn) == 1) {
@@ -124,11 +166,11 @@ save_backup <- function(obj, out_dir, file_stem, refuse_identical = TRUE,
   }
 
   timestamp <- strftime(Sys.time(), "%Y-%m-%d_%H-%M-%S")
-  fn <- paste0(file_stem, "_", timestamp, ".rds")
+  fn <- paste0(file_stem, "_", timestamp, ext)
   fp <- file.path(out_dir, fn)
   print(paste0("Saving to ", fp))
   if (is.null(tmp_fp)) {
-    saveRDS(obj, fp)
+    write_fun(obj, fp)
   } else {
     # the candidate is already serialised: move it into place
     file.copy(tmp_fp, fp, overwrite = TRUE)

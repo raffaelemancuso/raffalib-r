@@ -3,17 +3,19 @@
 #
 # Several tests need a pre-existing backup that is OLDER than anything
 # save_backup() writes now: they craft it by calling saveRDS() directly on a
-# hand-built "<stem>_2020-01-01_00-00-00.rds" name. saveRDS() output is
-# byte-identical to save_backup()'s for the same object, so the crafted files
-# also exercise the SHA-256 comparison, without any sleeps.
+# hand-built "<stem>_2020-01-01_00-00-00.rds" name, compressed with zstd to
+# match save_backup()'s default format. saveRDS() output is byte-identical to
+# save_backup()'s for the same object and format, so the crafted files also
+# exercise the SHA-256 comparison, without any sleeps.
 
-.craft_backup <- function(obj, dir, stem, timestamp = "2020-01-01_00-00-00") {
+.craft_backup <- function(obj, dir, stem, timestamp = "2020-01-01_00-00-00",
+                          compress = "zstd") {
   fp <- file.path(dir, paste0(stem, "_", timestamp, ".rds"))
-  saveRDS(obj, fp)
+  saveRDS(obj, fp, compress = compress)
   fp
 }
 
-.n_backups <- function(dir) length(list.files(dir, pattern = "\\.rds$"))
+.n_backups <- function(dir) length(list.files(dir, pattern = "\\.(rds|qs2)$"))
 
 test_that("save_backup and read_backup round-trip an object", {
   dir <- withr::local_tempdir()
@@ -168,4 +170,61 @@ test_that("invalid max_backups values error", {
   expect_error(save_backup(1, dir, "x", max_backups = 0))
   expect_error(save_backup(1, dir, "x", max_backups = -1))
   expect_error(save_backup(1, dir, "x", max_backups = c(2, 3)))
+})
+
+test_that("format controls the on-disk representation and round-trips", {
+  dir <- withr::local_tempdir()
+  obj <- list(a = 1:1000, b = letters)
+  magic <- function(fp, n = 4) readBin(fp, "raw", n)
+
+  expect_output(fp_z <- save_backup(obj, dir, "z"))  # default = rds_zstd
+  expect_identical(magic(fp_z), as.raw(c(0x28, 0xb5, 0x2f, 0xfd)))  # zstd frame
+  expect_equal(read_backup(dir, "z"), obj)
+
+  expect_output(fp_g <- save_backup(obj, dir, "g", format = "rds_gzip"))
+  expect_identical(magic(fp_g, 2), as.raw(c(0x1f, 0x8b)))           # gzip
+  expect_equal(read_backup(dir, "g"), obj)
+
+  expect_output(fp_u <- save_backup(obj, dir, "u", format = "rds_uncompressed"))
+  expect_identical(magic(fp_u, 2), as.raw(c(0x58, 0x0a)))           # "X\n"
+  expect_equal(read_backup(dir, "u"), obj)
+
+  expect_error(save_backup(obj, dir, "x", format = "nope"))
+})
+
+test_that("the dedup comparison is per-format: a format switch saves anew", {
+  dir <- withr::local_tempdir()
+  obj <- list(a = 1:1000)
+  .craft_backup(obj, dir, "pis", compress = "gzip")   # latest is gzip
+  expect_no_warning(
+    expect_output(save_backup(obj, dir, "pis"))       # zstd candidate differs
+  )
+  expect_equal(.n_backups(dir), 2)
+})
+
+test_that("qs2 format writes .qs2, round-trips, dedups and rotates", {
+  skip_if_not_installed("qs2")
+  dir <- withr::local_tempdir()
+  obj <- list(a = 1:1000, b = letters)
+
+  expect_output(fp <- save_backup(obj, dir, "obj", format = "qs2"))
+  expect_match(basename(fp), "\\.qs2$")
+  expect_equal(read_backup(dir, "obj"), obj)
+
+  # identical qs2 re-save is refused against the .qs2 backup
+  expect_warning(
+    save_backup(obj, dir, "obj", format = "qs2"),
+    "Refusing to save backup"
+  )
+  expect_equal(.n_backups(dir), 1)
+
+  # .rds and .qs2 backups of a stem rotate together
+  for (i in 1:5) {
+    .craft_backup(list(x = i), dir, "mix", sprintf("2020-01-0%d_00-00-00", i))
+  }
+  expect_output(save_backup(obj, dir, "mix", format = "qs2"))
+  fns <- list.files(dir, pattern = "^mix_")
+  expect_length(fns, 5)
+  expect_false("mix_2020-01-01_00-00-00.rds" %in% fns)  # oldest rotated out
+  expect_equal(read_backup(dir, "mix"), obj)            # newest is the .qs2
 })
