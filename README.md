@@ -46,11 +46,12 @@ For development use, the intended workflow is `devtools::document()` followed by
 | Function | Purpose |
 | --- | --- |
 | `correlation_table()` | Correlation matrix as a `flextable`, with a numbered variable legend in the footer. |
-| `flextable2docx()`, `ggplot2docx()`, `plot2docx()` | Write a `flextable`, a `ggplot`, or a base R plot to a `.docx` file, with caption and page-geometry control. |
+| `flextable2docx()`, `ggplot2docx()`, `plot2docx()` | Write a `flextable`, a `ggplot`, or a base R plot to a `.docx` file, with caption and page-geometry control. Cell padding is adjusted through signed per-side *offsets*, so per-cell differences (e.g. gtsummary's category indents) survive compaction. |
+| `flextable_collapse_group()`, `flextable_drop_component()`, `flextable_drop_term_rows()`, `flextable_drop_columns()`, `flextable_add_row_before_gof()` | Surgery on regression `flextable`s: collapse a block of control rows into one labelled line, drop rows by model component or by displayed term text (taking the trailing standard-error rows along), delete columns without breaking the footer's merged spans, and insert a labelled row just above the goodness-of-fit block. The coefficient/GOF separator rule is preserved throughout. |
 | `modelsummary_build_labelled_coef_map()` | Turn variable labels (including factor levels) into a `coef_map` for `modelsummary()`. |
 | `modelsummary_common_coefs_at_bottom()` | Re-order coefficients so terms shared across models print last. |
 | `modelsummary_getgofmap()`, `modelsummary_missing_variables_in_coef_map()` | Goodness-of-fit map helper and coef-map diagnostics. |
-| `gtsummary_add_mean_diff()`, `gtsummary_add_significance_stars()`, `gtsummary_format_statistic_column()` | Extensions for `gtsummary` tables: between-group differences, custom significance stars, statistic-column formatting. |
+| `gtsummary_add_mean_diff()`, `gtsummary_add_significance_stars()`, `gtsummary_collapse_footnote_newlines()`, `gtsummary_format_statistic_column()`, `gtsummary_rename_column()` | Extensions for `gtsummary` tables: between-group differences (with an auto-built footnote naming the groups and the direction), custom significance stars, collapsing the footnote line breaks that multiline statistic templates leak, statistic-column formatting, and column renaming that keeps the styling references intact. |
 
 ### Descriptive statistics
 
@@ -82,8 +83,8 @@ columns or cells it changed.
   possibly mixed) `glmmTMB` second stage. For a Gaussian second stage it
   reproduces textbook 2SLS; for count/binary outcomes it is the consistent
   alternative to the "forbidden regression". Returns an object with
-  `print`/`tidy`/`glance`/`nobs` methods, so it flows straight into
-  `modelsummary()`. The control-function residual is a *generated* regressor, so
+  `print`/`tidy`/`glance`/`nobs`/`family` methods, so it flows straight into
+  `modelsummary()` and other family-aware consumers. The control-function residual is a *generated* regressor, so
   naive second-stage SEs are invalid: a linear fit gets the exact analytic 2SLS
   covariance instead (iid, HC0/HC1 or clustered, via `vcov_type`), and a
   non-linear one can fall back on cluster-bootstrap SEs. Reports the three
