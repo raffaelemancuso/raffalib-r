@@ -572,6 +572,103 @@ flextable_drop_component <- function(tbl, component, component_col = "component"
   return(out)
 }
 
+#' Drop rows from a regression table by their term text
+#'
+#' Removes the rows whose term cell equals one of `terms` — exact matches on
+#' the trimmed displayed text, e.g. `"SD (Observations)"` or the `"Intercept"`
+#' label of a row collapsed by [flextable_collapse_group()] — together with
+#' the empty-term continuation rows (standard errors) trailing each of them.
+#'
+#' As in [flextable_drop_component()], the coefficient/GOF separator rule is
+#' preserved: if a dropped row carried it (a block at the bottom of the
+#' coefficients), the rule is redrawn on whatever row ends up last above the
+#' GOF block.
+#'
+#' @param tbl A `flextable`, typically from [modelsummary::modelsummary()]
+#'   with `output = "flextable"`.
+#' @param terms Character vector of displayed term texts to remove (exact,
+#'   trimmed matches).
+#' @param term_col Column key holding the term text. Detected by default as
+#'   the column carrying `"(Intercept)"`, falling back to the first column.
+#' @return The modified `flextable`; unchanged, with a warning, when no row
+#'   matches.
+#' @seealso [flextable_drop_component()], [flextable_collapse_group()]
+#' @examples
+#' \dontrun{
+#' tbl %>% flextable_drop_term_rows(c("Intercept", "SD (Observations)"))
+#' }
+#' @export
+flextable_drop_term_rows <- function(tbl, terms, term_col = NULL) {
+  stopifnot(
+    inherits(tbl, "flextable"),
+    is.character(terms), length(terms) > 0
+  )
+  if (is.null(term_col)) term_col <- flextable_term_col(tbl)
+  ds_terms <- trimws(as.character(tbl$body$dataset[[term_col]]))
+  starts <- which(ds_terms %in% terms)
+  if (length(starts) == 0) {
+    warning("No rows matching ", paste(sQuote(terms), collapse = ", "),
+            " were found in column ", sQuote(term_col), "; table left unchanged.")
+    return(tbl)
+  }
+  blank <- is.na(ds_terms) | ds_terms == ""
+
+  # a block is a matched row plus the blank-term rows trailing it
+  rows <- integer(0)
+  for (s in starts) {
+    e <- s
+    while (e < length(ds_terms) && blank[e + 1]) e <- e + 1
+    rows <- c(rows, s:e)
+  }
+  rows <- sort(unique(rows))
+
+  # note the separator rule and the GOF start while both are still in place,
+  # then redraw the rule on the last remaining coefficient row (see
+  # flextable_drop_component for the rationale)
+  bw <- tbl$body$styles$cells[["border.width.bottom"]]$data
+  rule <- if (is.null(bw)) 0 else suppressWarnings(max(bw[rows, , drop = FALSE], na.rm = TRUE))
+  gof_before <- flextable_gof_start(tbl)
+
+  out <- flextable::delete_rows(tbl, i = rows, part = "body")
+
+  if (is.finite(rule) && rule > 0 && !is.na(gof_before)) {
+    target <- gof_before - sum(rows < gof_before) - 1L
+    if (target >= 1L && target <= nrow(out$body$dataset)) {
+      out <- flextable::hline(
+        out, i = target, border = officer::fp_border(width = rule), part = "body"
+      )
+    }
+  }
+  return(out)
+}
+
+#' Drop columns from a table and restore the footer span
+#'
+#' [flextable::delete_columns()] resets the footer's merge spans, and flextable
+#' keeps a merged cell's text in every cell of the group — so after deleting a
+#' column, a footer note that spanned the table (the significance legend, a
+#' footnote) is suddenly repeated once per remaining column. This wraps the
+#' deletion and re-merges the footer: the same span repair the sibling helpers
+#' apply after their own edits. Footer only, deliberately: merging the body
+#' would collapse adjacent cells that happen to share a value, and the header
+#' carries no spans to restore.
+#'
+#' @param tbl A `flextable`.
+#' @param j Column key(s) to delete, passed to [flextable::delete_columns()].
+#' @return The modified `flextable`.
+#' @seealso [flextable_drop_component()], [flextable_collapse_group()],
+#'   [flextable2docx()]
+#' @examples
+#' \dontrun{
+#' tbl %>% flextable_drop_columns(j = c("component", "effect"))
+#' }
+#' @export
+flextable_drop_columns <- function(tbl, j) {
+  stopifnot(inherits(tbl, "flextable"))
+  tbl <- flextable::delete_columns(tbl, j = j)
+  flextable::merge_h(tbl, part = "footer")
+}
+
 #' Add a labelled row just above the goodness-of-fit block
 #'
 #' Puts a single row at the end of the coefficients of a regression table — the
@@ -767,13 +864,20 @@ flextable_subset_body_rows <- function(part, idx) {
 #' @param table_alignment Placement of the whole table on the page, one of
 #'   `"left"`, `"center"`, `"right"` (not the cell text alignment, which is
 #'   fixed as described above).
-#' @param padding.top,padding.bottom,padding.left,padding.right Per-side cell
-#'   padding (pt, all parts); `NULL` leaves that side at the table's own
-#'   values. `padding.left` and `padding.right` default to `0`: flextable writes
-#'   horizontal padding into Word as a paragraph indent on every cell
-#'   paragraph (the real cell margins are zeroed), which reads as an
-#'   invisible "space" before each entry — backspace-deletable but never shown
-#'   by formatting marks. Pass `NULL` to leave a side untouched.
+#' @param padding.offset.top,padding.offset.bottom,padding.offset.left,padding.offset.right
+#'   Per-side cell padding OFFSETS in pt, applied to every part (header,
+#'   body, footer). These are never absolute values: each cell's current
+#'   padding is shifted by the offset and floored at 0, so per-cell
+#'   differences — gtsummary's category-level indentation is a 15pt label
+#'   cell against flextable's 5pt default — are preserved by construction.
+#'   `0` (or `NULL`) leaves a side untouched; e.g. `padding.offset.top = -2`
+#'   compacts the default 5pt rows to 3pt. The defaults
+#'   `padding.offset.left = -5` and `padding.offset.right = -5` cancel
+#'   flextable's 5pt horizontal default (an indented 15pt cell keeps its 10pt
+#'   indent): flextable writes horizontal padding into Word as a paragraph
+#'   indent on every cell paragraph (the real cell margins are zeroed), which
+#'   reads as an invisible "space" before each entry — backspace-deletable
+#'   but never shown by formatting marks.
 #' @param layout Table layout, one of:
 #'   * `"fit_first_column"` (default) — the table fills the usable page width
 #'     (computed from `word_prop`'s paper format, orientation and margins)
@@ -798,10 +902,10 @@ flextable2docx <- function(
   font_name = "Aptos",
   font_size = 12,
   table_alignment = "left",
-  padding.top = NULL,
-  padding.bottom = NULL,
-  padding.left = 0,
-  padding.right = 0,
+  padding.offset.top = NULL,
+  padding.offset.bottom = NULL,
+  padding.offset.left = -5,
+  padding.offset.right = -5,
   layout = c("fit_first_column", "autofit", "fixed"),
   word_prop = list()
 ) {
@@ -831,16 +935,40 @@ flextable2docx <- function(
     )
   }
 
-  pads <- list(padding.top, padding.bottom, padding.left, padding.right)
-  if (!all(vapply(pads, is.null, logical(1)))) {
-    tbl %<>%
-      flextable::padding(
-        padding.top = padding.top,
-        padding.bottom = padding.bottom,
-        padding.left = padding.left,
-        padding.right = padding.right,
-        part = "all"
-      )
+  # list names are flextable::padding()'s argument names; values are the
+  # offsets from this function's padding.offset.* arguments
+  pads <- list(
+    padding.top = padding.offset.top, padding.bottom = padding.offset.bottom,
+    padding.left = padding.offset.left, padding.right = padding.offset.right
+  )
+  pads <- pads[!vapply(pads, is.null, logical(1))]
+  pads <- pads[vapply(pads, function(p) p != 0, logical(1))]
+  if (length(pads) > 0) {
+    # Padding arguments are SIGNED OFFSETS on each cell's current padding
+    # (floored at 0), never absolute values: shifting every cell by the same
+    # amount preserves per-cell DIFFERENCES by construction — gtsummary
+    # indents category levels by enlarging the label cell's left padding
+    # (15pt vs flextable's 5pt default), and that 10pt gap must survive any
+    # compaction. The default padding.left/right = -5 removes flextable's
+    # horizontal default entirely (5 -> 0) while a 15pt indent becomes 10pt.
+    # Cells are updated in groups of equal current value (per column and
+    # part), so the handful of distinct paddings costs a handful of calls.
+    for (side in names(pads)) {
+      off <- pads[[side]]
+      for (part_nm in c("header", "body", "footer")) {
+        pm <- tbl[[part_nm]]$styles$pars[[side]]$data
+        if (is.null(pm) || !is.matrix(pm) || length(pm) == 0) next
+        for (j in seq_len(ncol(pm))) {
+          for (v in unique(pm[!is.na(pm[, j]), j])) {
+            nv <- max(0, v + off)
+            if (nv == v) next
+            args <- list(tbl, i = which(pm[, j] == v), j = j, part = part_nm)
+            args[[side]] <- nv
+            tbl <- do.call(flextable::padding, args)
+          }
+        }
+      }
+    }
   }
 
   # Size the first column to its content (capped) and split the remaining
