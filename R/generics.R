@@ -51,19 +51,60 @@ read_backup <- function(dirpath, filestem) {
 #' successive calls never overwrite one another. Read the latest one back with
 #' [read_backup()].
 #'
+#' Before writing, the candidate backup is serialised to a temporary file and
+#' its SHA-256 checksum is compared with the most recent existing backup with
+#' the same `file_stem`: when they match, the object is unchanged and the save
+#' is refused with a warning, so re-running a script section does not litter
+#' `out_dir` with identical copies. (`.rds` serialisation is byte-deterministic
+#' for an identical object within an R version, so equal checksums mean equal
+#' backups; when serialisation does change — e.g. after an R upgrade — the
+#' checksums differ and a new backup is written, so the check can only err on
+#' the side of saving.)
+#'
 #' @param obj The object to serialise.
 #' @param out_dir Destination directory.
 #' @param file_stem File-name stem; the time stamp and `.rds` extension are
 #'   appended automatically.
-#' @return Invisibly, the return value of [saveRDS()]; called for its side
-#'   effect of writing the file.
+#' @return Invisibly, the path of the written backup file — or, when the save
+#'   is refused because the newest same-stem backup is identical, the path of
+#'   that existing backup.
 #' @seealso [read_backup()]
 #' @export
 save_backup <- function(obj, out_dir, file_stem) {
+  stopifnot(dir.exists(out_dir))
+
+  # serialise first, so the candidate can be hashed before touching out_dir
+  tmp_fp <- tempfile(fileext = ".rds")
+  on.exit(unlink(tmp_fp), add = TRUE)
+  saveRDS(obj, tmp_fp)
+
+  # most recent existing backup with the same stem (read_backup's pattern,
+  # anchored so one stem cannot match inside another, e.g. "pis" in "ai_pis")
+  latest_fn <- out_dir %>% list.files() %>%
+    str_subset(glue(
+      "^{file_stem}_\\d{{4}}-\\d{{2}}-\\d{{2}}_\\d{{2}}-\\d{{2}}-\\d{{2}}\\.rds$"
+    )) %>%
+    str_sort(numeric = TRUE, decreasing = TRUE) %>%
+    head(1)
+  if (length(latest_fn) == 1) {
+    latest_fp <- file.path(out_dir, latest_fn)
+    if (identical(
+      cli::hash_file_sha256(tmp_fp),
+      cli::hash_file_sha256(latest_fp)
+    )) {
+      warning(glue(
+        "Refusing to save backup \"{file_stem}\": the object is identical ",
+        "(same SHA-256) to the most recent backup \"{latest_fp}\"."
+      ))
+      return(invisible(latest_fp))
+    }
+  }
+
   timestamp <- strftime(Sys.time(), "%Y-%m-%d_%H-%M-%S")
   fn <- paste0(file_stem, "_", timestamp, ".rds")
   fp <- file.path(out_dir, fn)
   print(paste0("Saving to ", fp))
-  saveRDS(obj, fp)
+  file.copy(tmp_fp, fp, overwrite = TRUE)
+  return(invisible(fp))
 }
 
