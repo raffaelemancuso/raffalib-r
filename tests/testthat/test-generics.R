@@ -106,3 +106,66 @@ test_that("refuse_identical = FALSE always writes, without warning", {
   )
   expect_equal(.n_backups(dir), 2)
 })
+
+test_that("rotation keeps at most max_backups (default 5) per stem", {
+  dir <- withr::local_tempdir()
+  for (i in 1:5) {
+    .craft_backup(list(x = i), dir, "obj", sprintf("2020-01-0%d_00-00-00", i))
+  }
+  expect_output(save_backup(list(x = 99), dir, "obj"))   # 6th backup
+  fns <- list.files(dir, pattern = "^obj_")
+  expect_length(fns, 5)
+  expect_false("obj_2020-01-01_00-00-00.rds" %in% fns)   # oldest rotated out
+  expect_true("obj_2020-01-02_00-00-00.rds" %in% fns)    # next-oldest kept
+  expect_equal(read_backup(dir, "obj"), list(x = 99))    # newest is the save
+})
+
+test_that("rotation prunes pre-existing excess down to max_backups", {
+  dir <- withr::local_tempdir()
+  for (i in 1:4) {
+    .craft_backup(list(x = i), dir, "obj", sprintf("2020-01-0%d_00-00-00", i))
+  }
+  expect_output(save_backup(list(x = 99), dir, "obj", max_backups = 2))
+  fns <- list.files(dir, pattern = "^obj_")
+  expect_length(fns, 2)
+  expect_true("obj_2020-01-04_00-00-00.rds" %in% fns)    # newest crafted kept
+  expect_equal(read_backup(dir, "obj"), list(x = 99))
+})
+
+test_that("max_backups = NULL keeps every backup", {
+  dir <- withr::local_tempdir()
+  for (i in 1:6) {
+    .craft_backup(list(x = i), dir, "obj", sprintf("2020-01-0%d_00-00-00", i))
+  }
+  expect_output(save_backup(list(x = 99), dir, "obj", max_backups = NULL))
+  expect_length(list.files(dir, pattern = "^obj_"), 7)
+})
+
+test_that("a refused save does not rotate", {
+  dir <- withr::local_tempdir()
+  obj <- list(x = 99)
+  for (i in 1:6) {
+    .craft_backup(list(x = i), dir, "obj", sprintf("2020-01-0%d_00-00-00", i))
+  }
+  .craft_backup(obj, dir, "obj", "2021-01-01_00-00-00")  # newest, identical
+  expect_warning(save_backup(obj, dir, "obj"), "Refusing to save backup")
+  expect_length(list.files(dir, pattern = "^obj_"), 7)   # all still there
+})
+
+test_that("rotation only touches the saved stem", {
+  dir <- withr::local_tempdir()
+  for (i in 1:5) {
+    .craft_backup(list(x = i), dir, "obj", sprintf("2020-01-0%d_00-00-00", i))
+  }
+  .craft_backup("other", dir, "other_stem")
+  expect_output(save_backup(list(x = 99), dir, "obj"))
+  expect_length(list.files(dir, pattern = "^obj_"), 5)
+  expect_equal(read_backup(dir, "other_stem"), "other")  # untouched
+})
+
+test_that("invalid max_backups values error", {
+  dir <- withr::local_tempdir()
+  expect_error(save_backup(1, dir, "x", max_backups = 0))
+  expect_error(save_backup(1, dir, "x", max_backups = -1))
+  expect_error(save_backup(1, dir, "x", max_backups = c(2, 3)))
+})
