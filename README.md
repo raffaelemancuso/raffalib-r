@@ -107,7 +107,14 @@ columns or cells it changed.
 
 ### Miscellaneous
 
-`save_backup()` / `read_backup()` (time-stamped `.rds` snapshots).
+`save_backup()` / `read_backup()` — time-stamped `.rds` snapshots of any
+object (`<stem>_YYYY-MM-DD_HH-MM-SS.rds`). `save_backup()` refuses to write a
+backup that is identical (same SHA-256) to the stem's most recent one
+(`refuse_identical`, on by default) and rotates old backups, keeping the
+newest `max_backups` per stem (default 5; `NULL` keeps everything; a refused
+save never rotates). Stems are matched exactly, so one stem never shadows
+another (`pis` vs `ai_pis`); `read_backup()` reads back the newest backup of
+a stem.
 
 ## Examples
 
