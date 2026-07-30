@@ -2,16 +2,25 @@
 # (save_backup / read_backup).
 #
 # Several tests need a pre-existing backup that is OLDER than anything
-# save_backup() writes now: they craft it by calling saveRDS() directly on a
-# hand-built "<stem>_2020-01-01_00-00-00.rds" name, compressed with zstd to
-# match save_backup()'s default format. saveRDS() output is byte-identical to
-# save_backup()'s for the same object and format, so the crafted files also
-# exercise the SHA-256 comparison, without any sleeps.
+# save_backup() writes now: they craft it by serialising directly onto a
+# hand-built "<stem>_2020-01-01_00-00-00" name, in save_backup()'s default
+# format (qs2, same thread count) unless another format is requested. The
+# writers' output is byte-identical to save_backup()'s for the same object
+# and format, so the crafted files also exercise the SHA-256 comparison,
+# without any sleeps.
 
 .craft_backup <- function(obj, dir, stem, timestamp = "2020-01-01_00-00-00",
-                          compress = "zstd") {
-  fp <- file.path(dir, paste0(stem, "_", timestamp, ".rds"))
-  saveRDS(obj, fp, compress = compress)
+                          format = "qs2") {
+  if (format == "qs2") {
+    fp <- file.path(dir, paste0(stem, "_", timestamp, ".qs2"))
+    qs2::qs_save(obj, fp, nthreads = max(1L, parallel::detectCores() - 2L))
+  } else {
+    fp <- file.path(dir, paste0(stem, "_", timestamp, ".rds"))
+    saveRDS(obj, fp, compress = switch(
+      format,
+      rds_zstd = "zstd", rds_gzip = "gzip", rds_uncompressed = FALSE
+    ))
+  }
   fp
 }
 
@@ -31,7 +40,7 @@ test_that("save_backup writes a time-stamped name and returns its path invisibly
   expect_true(file.exists(res$value))
   expect_match(
     basename(res$value),
-    "^myobj_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}\\.rds$"
+    "^myobj_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}\\.qs2$"
   )
 })
 
@@ -117,8 +126,8 @@ test_that("rotation keeps at most max_backups (default 5) per stem", {
   expect_output(save_backup(list(x = 99), dir, "obj"))   # 6th backup
   fns <- list.files(dir, pattern = "^obj_")
   expect_length(fns, 5)
-  expect_false("obj_2020-01-01_00-00-00.rds" %in% fns)   # oldest rotated out
-  expect_true("obj_2020-01-02_00-00-00.rds" %in% fns)    # next-oldest kept
+  expect_false("obj_2020-01-01_00-00-00.qs2" %in% fns)   # oldest rotated out
+  expect_true("obj_2020-01-02_00-00-00.qs2" %in% fns)    # next-oldest kept
   expect_equal(read_backup(dir, "obj"), list(x = 99))    # newest is the save
 })
 
@@ -130,7 +139,7 @@ test_that("rotation prunes pre-existing excess down to max_backups", {
   expect_output(save_backup(list(x = 99), dir, "obj", max_backups = 2))
   fns <- list.files(dir, pattern = "^obj_")
   expect_length(fns, 2)
-  expect_true("obj_2020-01-04_00-00-00.rds" %in% fns)    # newest crafted kept
+  expect_true("obj_2020-01-04_00-00-00.qs2" %in% fns)    # newest crafted kept
   expect_equal(read_backup(dir, "obj"), list(x = 99))
 })
 
@@ -177,7 +186,7 @@ test_that("format controls the on-disk representation and round-trips", {
   obj <- list(a = 1:1000, b = letters)
   magic <- function(fp, n = 4) readBin(fp, "raw", n)
 
-  expect_output(fp_z <- save_backup(obj, dir, "z"))  # default = rds_zstd
+  expect_output(fp_z <- save_backup(obj, dir, "z", format = "rds_zstd"))
   expect_identical(magic(fp_z), as.raw(c(0x28, 0xb5, 0x2f, 0xfd)))  # zstd frame
   expect_equal(read_backup(dir, "z"), obj)
 
@@ -195,9 +204,9 @@ test_that("format controls the on-disk representation and round-trips", {
 test_that("the dedup comparison is per-format: a format switch saves anew", {
   dir <- withr::local_tempdir()
   obj <- list(a = 1:1000)
-  .craft_backup(obj, dir, "pis", compress = "gzip")   # latest is gzip
+  .craft_backup(obj, dir, "pis", format = "rds_gzip")  # latest is gzip rds
   expect_no_warning(
-    expect_output(save_backup(obj, dir, "pis"))       # zstd candidate differs
+    expect_output(save_backup(obj, dir, "pis"))        # qs2 candidate differs
   )
   expect_equal(.n_backups(dir), 2)
 })
@@ -220,7 +229,8 @@ test_that("qs2 format writes .qs2, round-trips, dedups and rotates", {
 
   # .rds and .qs2 backups of a stem rotate together
   for (i in 1:5) {
-    .craft_backup(list(x = i), dir, "mix", sprintf("2020-01-0%d_00-00-00", i))
+    .craft_backup(list(x = i), dir, "mix", sprintf("2020-01-0%d_00-00-00", i),
+                  format = "rds_zstd")
   }
   expect_output(save_backup(obj, dir, "mix", format = "qs2"))
   fns <- list.files(dir, pattern = "^mix_")

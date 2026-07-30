@@ -99,14 +99,16 @@ read_backup <- function(dirpath, filestem) {
 #'   successful save, the oldest backups beyond this count are deleted.
 #'   Default `5`; `NULL` deactivates the rotation and keeps every backup.
 #' @param format Serialisation format. One of:
-#'   * `"rds_zstd"` (default) — [saveRDS()] with Zstandard compression
-#'     (needs R >= 4.5): gzip-sized files at roughly half the write time.
+#'   * `"qs2"` (default) — [qs2::qs_save()], multithreaded: by far the
+#'     fastest and the smallest, but the backup can only be read where the
+#'     `qs2` package is available. Files get a `.qs2` extension instead of
+#'     `.rds`.
+#'   * `"rds_zstd"` — [saveRDS()] with Zstandard compression (needs
+#'     R >= 4.5): gzip-sized files at roughly half the write time, readable
+#'     with plain [readRDS()].
 #'   * `"rds_gzip"` — [saveRDS()] with its default gzip compression.
 #'   * `"rds_uncompressed"` — [saveRDS()] without compression: fastest of the
 #'     rds variants, largest files.
-#'   * `"qs2"` — [qs2::qs_save()], multithreaded: by far the fastest and the
-#'     smallest, but the backup can only be read where the `qs2` package is
-#'     available. Files get a `.qs2` extension instead of `.rds`.
 #'
 #'   All four formats are byte-deterministic, so the `refuse_identical`
 #'   comparison works with each. The comparison is bytewise, however, so an
@@ -119,8 +121,8 @@ read_backup <- function(dirpath, filestem) {
 #' @export
 save_backup <- function(obj, out_dir, file_stem, refuse_identical = TRUE,
                         max_backups = 5,
-                        format = c("rds_zstd", "rds_gzip",
-                                   "rds_uncompressed", "qs2")) {
+                        format = c("qs2", "rds_zstd", "rds_gzip",
+                                   "rds_uncompressed")) {
   format <- match.arg(format)
   stopifnot(dir.exists(out_dir))
   stopifnot(

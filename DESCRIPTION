@@ -42,6 +42,7 @@ Imports:
     optimx,
     parallel,
     parameters,
+    qs2,
     reformulas,
     rlang,
     rlist,
@@ -64,7 +65,6 @@ Suggests:
     lfe,
     MASS,
     plm,
-    qs2,
     withr
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
