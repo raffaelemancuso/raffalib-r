@@ -17,6 +17,11 @@ test_that("flextable2docx forwards word_prop to the caption/page setup", {
   expect_true(file.exists(out))
 })
 
+# Raw-term mtcars tables (no coef_rename) display "factor(cyl)6": matching is
+# literal, so the collapse calls below name the displayed terms themselves.
+cyl_terms  <- c("factor(cyl)6", "factor(cyl)8")
+gear_terms <- c("factor(gear)4", "factor(gear)5")
+
 test_that("flextable_collapse_group replaces several variables with ONE row", {
   m1 <- lm(mpg ~ wt + factor(cyl) + factor(gear), data = mtcars)
   m2 <- lm(mpg ~ wt + hp + factor(cyl) + factor(gear), data = mtcars)
@@ -25,7 +30,7 @@ test_that("flextable_collapse_group replaces several variables with ONE row", {
   terms0 <- trimws(as.character(ds0[[ft$col_keys[1]]]))
 
   out <- flextable_collapse_group(
-    ft, vars = c("factor(cyl)", "factor(gear)"), label = "Controls", value = "YES"
+    ft, vars = c(cyl_terms, gear_terms), new_label = "Controls", new_value = "YES"
   )
   ds    <- out$body$dataset
   terms <- trimws(as.character(ds[[out$col_keys[1]]]))
@@ -39,14 +44,16 @@ test_that("flextable_collapse_group replaces several variables with ONE row", {
   expect_true(any(startsWith(terms, "wt")))
 })
 
-test_that("flextable_collapse_group puts the row where the group started", {
-  # cyl comes before gear in the model, so collapsing cyl must land above gear
+test_that("flextable_collapse_group can put the row where the group started", {
+  # cyl comes before gear in the model, so collapsing cyl with
+  # move_before_gof = FALSE must land above gear
   m  <- lm(mpg ~ wt + factor(cyl) + factor(gear), data = mtcars)
   ft <- modelsummary::modelsummary(m, output = "flextable")
   terms0 <- trimws(as.character(ft$body$dataset[[ft$col_keys[1]]]))
   i_cyl0 <- match(TRUE, startsWith(terms0, "factor(cyl)"))
 
-  out <- flextable_collapse_group(ft, vars = "factor(cyl)", label = "Controls", value = "YES")
+  out <- flextable_collapse_group(ft, vars = cyl_terms, new_label = "Controls",
+                                  new_value = "YES", move_before_gof = FALSE)
   terms <- trimws(as.character(out$body$dataset[[out$col_keys[1]]]))
 
   # exactly where the first block of the group was
@@ -59,8 +66,8 @@ test_that("flextable_collapse_group puts the row where the group started", {
 test_that("flextable_collapse_group moves the coefficient/GOF rule, never duplicates it", {
   m  <- lm(mpg ~ wt + factor(cyl) + factor(gear), data = mtcars)
   ft <- modelsummary::modelsummary(m, output = "flextable")
-  out <- flextable_collapse_group(ft, vars = "factor(cyl)", label = "A", value = "YES")
-  out <- flextable_collapse_group(out, vars = "factor(gear)", label = "B", value = "YES")
+  out <- flextable_collapse_group(ft, vars = cyl_terms, new_label = "A", new_value = "YES")
+  out <- flextable_collapse_group(out, vars = gear_terms, new_label = "B", new_value = "YES")
 
   terms <- trimws(as.character(out$body$dataset[[out$col_keys[1]]]))
   bottom <- apply(out$body$styles$cells$border.width.bottom$data, 1, max)
@@ -76,7 +83,7 @@ test_that("flextable_collapse_group keeps the table renderable after insertion",
   m  <- lm(mpg ~ wt + factor(cyl) + factor(gear), data = mtcars)
   ft <- modelsummary::modelsummary(m, output = "flextable")
   out <- flextable_collapse_group(
-    ft, vars = c("factor(cyl)", "factor(gear)"), label = "Controls", value = "YES"
+    ft, vars = c(cyl_terms, gear_terms), new_label = "Controls", new_value = "YES"
   )
   # the parallel style/content structures must stay in step with the dataset
   n <- nrow(out$body$dataset)
@@ -103,7 +110,7 @@ test_that("flextable_collapse_group resolves variable NAMES through labels", {
 
   # named by model variable, not by the label the table displays
   out <- flextable_collapse_group(
-    ft, vars = c("cyl_f", "gear_f"), label = "Controls", labels = d
+    ft, vars = c("cyl_f", "gear_f"), new_label = "Controls", data = d
   )
   terms <- trimws(as.character(out$body$dataset[[out$col_keys[1]]]))
   expect_false(any(startsWith(terms, "Cylinders")))
@@ -111,7 +118,7 @@ test_that("flextable_collapse_group resolves variable NAMES through labels", {
   expect_equal(sum(terms == "Controls"), 1L)
 })
 
-test_that("flextable_collapse_group treats vars as name prefixes", {
+test_that("flextable_collapse_group matches names literally, never as prefixes", {
   d <- mtcars
   d$ctrl_a <- factor(d$cyl)
   d$ctrl_b <- factor(d$gear)
@@ -119,12 +126,35 @@ test_that("flextable_collapse_group treats vars as name prefixes", {
   m  <- lm(mpg ~ wt + ctrl_a + ctrl_b, data = d)
   ft <- modelsummary::modelsummary(m, output = "flextable", coef_rename = TRUE)
 
-  # one prefix picks up both ctrl_a and ctrl_b
-  out <- flextable_collapse_group(ft, vars = "ctrl_", label = "Controls", labels = d)
+  # the shared name prefix resolves to no variable -> error, not expansion
+  expect_error(
+    flextable_collapse_group(ft, vars = "ctrl_", new_label = "Controls", data = d),
+    "ctrl_"
+  )
+  # both variables named in full collapse as before
+  out <- flextable_collapse_group(
+    ft, vars = c("ctrl_a", "ctrl_b"), new_label = "Controls", data = d
+  )
   terms <- trimws(as.character(out$body$dataset[[out$col_keys[1]]]))
   expect_false(any(startsWith(terms, "First")))
   expect_false(any(startsWith(terms, "Second")))
   expect_equal(sum(terms == "Controls"), 1L)
+})
+
+test_that("flextable_collapse_group matches a label only up to its level suffix", {
+  # "Gender" must take "Gender [male]" but leave "Gendered" (another variable
+  # whose displayed text merely starts with the same characters) alone
+  ft <- flextable::flextable(data.frame(
+    term = c("(Intercept)", "Gender [male]", "", "Gendered", "wt"),
+    m1   = c("1.0", "2.0", "(0.1)", "3.0", "4.0"),
+    stringsAsFactors = FALSE
+  ))
+  out <- flextable_collapse_group(ft, vars = "Gender", new_label = "Controls",
+                                  new_value = "YES", move_before_gof = FALSE)
+  expect_equal(
+    trimws(as.character(out$body$dataset$term)),
+    c("(Intercept)", "Controls", "Gendered", "wt")
+  )
 })
 
 test_that("flextable_collapse_group matches unlabelled terms printed with spaces", {
@@ -136,7 +166,8 @@ test_that("flextable_collapse_group matches unlabelled terms printed with spaces
   terms0 <- trimws(as.character(ft$body$dataset[[ft$col_keys[1]]]))
   expect_true(any(startsWith(terms0, "start year")))
 
-  out <- flextable_collapse_group(ft, vars = "start_year", label = "Years FE", value = "YES")
+  out <- flextable_collapse_group(ft, vars = "start_year", new_label = "Years FE",
+                                  new_value = "YES")
   terms <- trimws(as.character(out$body$dataset[[out$col_keys[1]]]))
   expect_false(any(startsWith(terms, "start year")))
   expect_equal(sum(terms == "Years FE"), 1L)
@@ -150,7 +181,8 @@ test_that("flextable_collapse_group finds the term column past grouping columns"
     m1        = c("1.0", "2.0", "(0.1)", "3.0"),
     stringsAsFactors = FALSE
   ))
-  out <- flextable_collapse_group(ft, vars = "gender", label = "Controls", value = "YES")
+  out <- flextable_collapse_group(ft, vars = "gender", new_label = "Controls",
+                                  new_value = "YES", move_before_gof = FALSE)
   ds  <- out$body$dataset
   # the collapsed row sits where the gender block was, between Intercept and wt
   expect_equal(trimws(as.character(ds$term)), c("(Intercept)", "Controls", "wt"))
@@ -183,7 +215,7 @@ test_that("flextable_drop_component keeps the coefficient/GOF rule", {
   expect_gt(rule_before, 0)
 
   out <- flextable_drop_component(ft, "dispersion")
-  terms <- trimws(as.character(out$body$dataset[[flextable_term_col(out)]]))
+  terms <- trimws(as.character(out$body$dataset[[raffalib:::flextable_term_col(out)]]))
   bottom <- apply(out$body$styles$cells$border.width.bottom$data, 1, max)
   gof <- match("Num.Obs.", terms)
 
@@ -203,12 +235,58 @@ test_that("flextable_drop_component warns rather than mangling the table", {
   expect_warning(flextable_drop_component(ft2, "zi"), "No rows for component")
 })
 
-test_that("flextable_collapse_group warns when nothing matches", {
+test_that("flextable_collapse_group errors when nothing matches", {
   ft <- flextable::flextable(data.frame(term = c("a", "b"), est = 1:2))
-  expect_warning(
-    flextable_collapse_group(ft, "nonexistent", label = "Controls"),
-    "No rows matching"
+  expect_error(
+    flextable_collapse_group(ft, "nonexistent", new_label = "Controls"),
+    "nonexistent"
   )
+})
+
+test_that("flextable_collapse_group errors when even ONE variable is not found", {
+  ft <- flextable::flextable(data.frame(
+    term = c("(Intercept)", "gender [male]", "", "wt", "Num.Obs."),
+    m1   = c("1.0", "2.0", "(0.1)", "3.0", "32"),
+    stringsAsFactors = FALSE
+  ))
+  # `gender` matches, `ethnicity_d` does not: the mixed call must still error,
+  # and the message must name the offending variable
+  expect_error(
+    flextable_collapse_group(ft, c("gender", "ethnicity_d"), new_label = "Controls"),
+    "ethnicity_d"
+  )
+})
+
+test_that("flextable_drop_term_rows drops the block of every named term", {
+  ft <- flextable::flextable(data.frame(
+    term = c("(Intercept)", "", "wt", "", "SD (Observations)", "", "Num.Obs."),
+    m1   = c("1.0", "(0.1)", "2.0", "(0.2)", "3.0", "(0.3)", "32"),
+    stringsAsFactors = FALSE
+  ))
+  out <- flextable_drop_term_rows(ft, c("(Intercept)", "SD (Observations)"))
+  # each named term goes along with its trailing standard-error row
+  expect_equal(
+    trimws(as.character(out$body$dataset$term)),
+    c("wt", "", "Num.Obs.")
+  )
+})
+
+test_that("flextable_drop_term_rows errors when a term is not found", {
+  ft <- flextable::flextable(data.frame(
+    term = c("(Intercept)", "", "wt", "Num.Obs."),
+    m1   = c("1.0", "(0.1)", "2.0", "32"),
+    stringsAsFactors = FALSE
+  ))
+  # nothing matches at all
+  expect_error(flextable_drop_term_rows(ft, "Intercept"), "Intercept")
+  # one term matches, the other does not: still an error, naming the miss
+  expect_error(
+    flextable_drop_term_rows(ft, c("(Intercept)", "RMSE")),
+    "RMSE"
+  )
+  # the exact-match call still works
+  out <- flextable_drop_term_rows(ft, "(Intercept)")
+  expect_equal(trimws(as.character(out$body$dataset$term)), c("wt", "Num.Obs."))
 })
 
 test_that("plot2docx writes a .docx file from a base plot", {

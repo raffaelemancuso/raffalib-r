@@ -363,18 +363,28 @@ ggplot2docx <- function(
 #' "Controls: Yes" line of a regression table.
 #'
 #' Variables are given by their **names in the model** (e.g. `"gender"`,
-#' `"piStage"`), not by whatever the table displays. When the table was built
-#' with `coef_rename = TRUE` the displayed terms are variable *labels*
-#' (`"Gender [male]"`, `"log(1+PubsPiQ1)"`), so pass the label lookup through
-#' `data` — either the labelled data frame the models were fit on or a named
-#' character vector (`name -> label`) — and the names are resolved to the text
-#' actually shown. Each element of `vars` is treated as a **prefix** over
-#' variable names, so `"log_pi_5y_count"` picks up `log_pi_5y_count_Q1`,
-#' `log_pi_5y_count_Q2`, ... in one go. Names that resolve to no label are
-#' matched literally *and* in the spelling `modelsummary` gives unlabelled
+#' `"piStage"`), not by whatever the table displays, and each name is matched
+#' **literally** — `"log_pi_5y_count"` does *not* pick up
+#' `log_pi_5y_count_Q1`, `log_pi_5y_count_Q2`, ...; list every variable. When
+#' the table was built with `coef_rename = TRUE` the displayed terms are
+#' variable *labels* (`"Gender [male]"`, `"log(1+PubsPiQ1)"`), so pass the
+#' label lookup through `data` — either the labelled data frame the models
+#' were fit on or a named character vector (`name -> label`) — and the names
+#' are resolved to the text actually shown. A name's candidate texts are its
+#' label plus the bare name and the spelling `modelsummary` gives unlabelled
 #' terms, with underscores turned into spaces (`"start_year"` also matches
-#' `"start year [2008]"`), which covers `coef_rename = FALSE` tables and
-#' variables whose label was dropped en route (`forcats::fct_drop()` does that).
+#' `"start year [2008]"`), which covers variables whose label was dropped en
+#' route (`forcats::fct_drop()` does that). A term row belongs to a variable
+#' when its displayed text **equals** one of these candidates or is a
+#' candidate followed by a bracketed factor level (`"Gender"` matches
+#' `"Gender [male]"` but not `"Gendered"`). Raw-term tables that concatenate
+#' the level directly (`coef_rename = FALSE`: `"factor(cyl)6"`) are not
+#' expanded — pass the displayed term texts themselves.
+#'
+#' Every element of `vars` must match at least one row: a name that resolves
+#' to no displayed term is an **error**, not a silent no-op, so a misspelled
+#' variable, or one absent from the models' right-hand side, cannot leave its
+#' rows uncollapsed unnoticed.
 #'
 #' The collapsed row is **moved to the end of the coefficient block**, just
 #' above the goodness-of-fit statistics, so successive calls stack their
@@ -392,7 +402,8 @@ ggplot2docx <- function(
 #'
 #' @param tbl A `flextable`, typically from
 #'   [modelsummary::modelsummary()] with `output = "flextable"`.
-#' @param vars Character vector of variable names (or name prefixes) to collapse.
+#' @param vars Character vector of variable names to collapse, each matched
+#'   literally (see Details); an element matching no row is an error.
 #' @param new_label Text placed in the term column of the collapsed row.
 #' @param new_value Text placed in every model column of the collapsed row
 #'   (default `"Yes"`).
@@ -433,19 +444,26 @@ flextable_collapse_group <- function(tbl, vars, new_label, new_value = "Yes",
   if (is.data.frame(labels)) labels <- labelled::var_label(labels)
   labels <- unlist(labels[!vapply(labels, is.null, logical(1))])
 
-  # every variable whose NAME starts with one of `vars` contributes its label
-  # (or, unlabelled, its bare name) as a text prefix to match on
-  prefixes <- unique(unlist(lapply(vars, function(v) {
-    hit <- if (length(labels)) labels[startsWith(names(labels), v)] else character(0)
-    # An unlabelled variable is printed by `modelsummary` with its underscores
-    # turned into spaces ("start_year" -> "start year [2008]"), so match that
-    # spelling too. This matters for variables whose label was dropped along
-    # the way -- `forcats::fct_drop()` discards it, for instance.
-    c(unname(hit), v, gsub("_", " ", v))
-  })))
-
+  # Each variable name resolves LITERALLY (no prefix expansion) to its
+  # candidate display texts: its label (when `data` carries one), the bare
+  # name, and the spelling `modelsummary` gives unlabelled terms, with
+  # underscores turned into spaces ("start_year" -> "start year [2008]") --
+  # which also covers variables whose label was dropped along the way
+  # (`forcats::fct_drop()` discards it, for instance).
+  texts_of <- function(v) {
+    lab <- if (length(labels)) unname(labels[names(labels) == v]) else character(0)
+    unique(c(lab, v, gsub("_", " ", v)))
+  }
+  # a term row belongs to `v` when its text IS one of v's candidates, or is a
+  # candidate followed by a bracketed factor level ("Gender" matches
+  # "Gender [male]" but not "Gendered")
+  matches_var <- function(x, v) {
+    Reduce(`|`, lapply(texts_of(v), function(p) {
+      x == p | startsWith(x, paste0(p, " ["))
+    }), init = logical(length(x)))
+  }
   matches_any <- function(x) {
-    Reduce(`|`, lapply(prefixes, function(p) startsWith(x, p)),
+    Reduce(`|`, lapply(vars, function(v) matches_var(x, v)),
            init = logical(length(x)))
   }
 
@@ -456,21 +474,23 @@ flextable_collapse_group <- function(tbl, vars, new_label, new_value = "Yes",
       sum(matches_any(trimws(as.character(tbl$body$dataset[[ck]]))))
     }, integer(1))
     if (max(hits) == 0) {
-      warning("No rows matching ", paste(sQuote(vars), collapse = ", "),
-              " were found; table left unchanged.")
-      return(tbl)
+      stop("No rows matching ", paste(sQuote(vars), collapse = ", "),
+           " were found in any column; every element of `vars` must match ",
+           "at least one term row.")
     }
     term_col <- col_keys[which.max(hits)]
   }
 
   terms <- trimws(as.character(tbl$body$dataset[[term_col]]))
   blank <- is.na(terms) | terms == ""
-  starts <- which(!blank & matches_any(terms))
-  if (length(starts) == 0) {
-    warning("No rows matching ", paste(sQuote(vars), collapse = ", "),
-            " were found in column ", sQuote(term_col), "; table left unchanged.")
-    return(tbl)
+  starts_of <- lapply(vars, function(v) which(!blank & matches_var(terms, v)))
+  unmatched <- vars[lengths(starts_of) == 0]
+  if (length(unmatched) > 0) {
+    stop("No rows found for ", paste(sQuote(unmatched), collapse = ", "),
+         " in column ", sQuote(term_col), "; every element of `vars` must ",
+         "match at least one term row.")
   }
+  starts <- sort(unique(unlist(starts_of)))
 
   # a block is a matched row plus the blank-term rows trailing it
   rows <- integer(0)
@@ -587,11 +607,12 @@ flextable_drop_component <- function(tbl, component, component_col = "component"
 #' @param tbl A `flextable`, typically from [modelsummary::modelsummary()]
 #'   with `output = "flextable"`.
 #' @param terms Character vector of displayed term texts to remove (exact,
-#'   trimmed matches).
+#'   trimmed matches). Every element must match at least one row: a text
+#'   found nowhere is an **error**, not a silent no-op, so a stale or
+#'   misspelled entry cannot leave its rows standing unnoticed.
 #' @param term_col Column key holding the term text. Detected by default as
 #'   the column carrying `"(Intercept)"`, falling back to the first column.
-#' @return The modified `flextable`; unchanged, with a warning, when no row
-#'   matches.
+#' @return The modified `flextable`.
 #' @seealso [flextable_drop_component()], [flextable_collapse_group()]
 #' @examples
 #' \dontrun{
@@ -605,12 +626,14 @@ flextable_drop_term_rows <- function(tbl, terms, term_col = NULL) {
   )
   if (is.null(term_col)) term_col <- flextable_term_col(tbl)
   ds_terms <- trimws(as.character(tbl$body$dataset[[term_col]]))
-  starts <- which(ds_terms %in% terms)
-  if (length(starts) == 0) {
-    warning("No rows matching ", paste(sQuote(terms), collapse = ", "),
-            " were found in column ", sQuote(term_col), "; table left unchanged.")
-    return(tbl)
+  starts_of <- lapply(terms, function(tm) which(ds_terms == tm))
+  unmatched <- terms[lengths(starts_of) == 0]
+  if (length(unmatched) > 0) {
+    stop("No rows found for ", paste(sQuote(unmatched), collapse = ", "),
+         " in column ", sQuote(term_col), "; every element of `terms` must ",
+         "match at least one row.")
   }
+  starts <- sort(unique(unlist(starts_of)))
   blank <- is.na(ds_terms) | ds_terms == ""
 
   # a block is a matched row plus the blank-term rows trailing it
@@ -1008,4 +1031,52 @@ flextable2docx <- function(
 
   # Finalize and return
   return(finalize_docx(outs, outfp))
+}
+
+#' How many equal-width columns fit on a page next to the first column
+#'
+#' Companion of the default `fit_first_column` layout of [flextable2docx()],
+#' which sizes the first (term) column to its content and splits the remaining
+#' usable page width equally among the other columns. This helper measures the
+#' natural width of every column of `tbl` at the export font
+#' ([flextable::dim_pretty()], with the horizontal padding removed as
+#' [flextable2docx()] does by default) and returns the largest number of
+#' non-first columns whose widest member still fits its equal share of the
+#' page, i.e. how many model columns a regression table can carry per page
+#' without wrapping its cells. Use it to split a wide `modelsummary` table
+#' into as few pages (files) as possible: build one table holding every model,
+#' ask how many fit, and export the models in batches of that size.
+#'
+#' @inheritParams flextable2docx
+#' @param tbl A `flextable` holding every candidate column.
+#' @return An integer, at least 1.
+#' @examples
+#' \dontrun{
+#' tbl_all <- modelsummary::modelsummary(mods, output = "flextable")
+#' per_page <- flextable_columns_per_page(tbl_all, font_size = 10,
+#'                                        word_prop = list(page_landscape = TRUE))
+#' batches <- split(seq_along(mods), ceiling(seq_along(mods) / per_page))
+#' }
+#' @export
+flextable_columns_per_page <- function(
+  tbl,
+  font_name = "Aptos",
+  font_size = 12,
+  word_prop = list()
+) {
+  stopifnot(inherits(tbl, "flextable"), length(tbl$col_keys) > 1)
+  tbl %<>%
+    flextable::font(fontname = font_name, part = "all") %>%
+    flextable::fontsize(size = font_size, part = "all") %>%
+    flextable::padding(padding.left = 0, padding.right = 0, part = "all")
+
+  wp <- function(nm, def) if (is.null(word_prop[[nm]])) def else word_prop[[nm]]
+  paper <- paper_sizes[[wp("paper_format", "A4")]]
+  paper_w_mm <- if (isTRUE(word_prop$page_landscape)) paper[2] else paper[1]
+  usable <- paper_w_mm / 25.4 -
+    wp("page_margin_left", 1) - wp("page_margin_right", 1)
+
+  widths <- flextable::dim_pretty(tbl, part = "all")$widths
+  w1 <- min(flextable::dim_pretty(tbl, part = "body")$widths[1], 0.4 * usable)
+  max(1L, as.integer(floor((usable - w1) / max(widths[-1]))))
 }

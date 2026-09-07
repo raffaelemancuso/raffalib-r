@@ -176,12 +176,40 @@ gtsummary_format_statistic_column <- function(table, digits = 6) {
   return(gtsummary::modify_fmt_fun(table, statistic = fmt_fnc))
 }
 
+#' Between-group difference in proportions
+#'
+#' Computes, for each level of `x`, the difference between the two `g` groups
+#' in the proportions selected by `statistic`.
+#'
+#' @param x The variable being summarised.
+#' @param g The two-level grouping variable.
+#' @param statistic One of `"col_pct"`, `"row_pct"`, `"cell_pct"`.
+#' @return Named numeric vector of differences (group 2 minus group 1) on the
+#'   0-1 scale, one element per level of `x`.
+#' @noRd
+gtsummary_prop_diff <- function(x, g, statistic) {
+  # margin=1 -> proportions by rows (the sum of a row equals 1)
+  # margin=2 -> proportions by columns (the sum of a column equals 1)
+  # no margin -> proportions by cells (the sum of the table equals 1)
+  prop <- switch(
+    statistic,
+    col_pct = prop.table(table(x, g), margin = 2),
+    row_pct = prop.table(table(x, g), margin = 1),
+    cell_pct = prop.table(table(x, g)),
+    {
+      stop(paste0("ERROR: Unrecognized statistic ", statistic))
+    }
+  )
+  return(prop[, 2] - prop[, 1])
+}
+
 #' Compute the between-group difference for a gtsummary variable
 #'
 #' Worker function (in the form expected by [gtsummary::add_stat()]) that returns
-#' the difference between the two groups defined by `by`: a difference in means
-#' for continuous variables, and a difference in proportions (in percentage
-#' points) for categorical and dichotomous variables. Assumes exactly two groups.
+#' the difference between the two groups defined by `by`. Which statistic is
+#' differenced is chosen with `statistic`: mean or median for continuous
+#' variables; column, row, or cell percentages for categorical and dichotomous
+#' variables. Assumes exactly two groups.
 #' See <https://stackoverflow.com/a/79876424/1719931>.
 #'
 #' @param data The data frame underlying the table.
@@ -189,13 +217,18 @@ gtsummary_format_statistic_column <- function(table, digits = 6) {
 #' @param by Name of the two-level grouping variable.
 #' @param tbl The `gtsummary` table being built, used to look up the variable
 #'   type that `gtsummary` assigned.
+#' @param statistic Which statistic to difference. For continuous variables
+#'   `"mean"` (default) or `"median"`; for categorical and dichotomous variables
+#'   `"col_pct"` (default), `"row_pct"`, or `"cell_pct"`, i.e. proportions
+#'   computed within each column (group), within each row (level), or over all
+#'   cells. `NULL` falls back to the default for the variable type.
 #' @param ... Unused; kept for compatibility with the [gtsummary::add_stat()] API.
 #' @return A numeric difference (group 2 minus group 1); for categorical and
 #'   dichotomous variables the difference in proportions on the 0-1 scale
 #'   (formatted as a 0%-100% percentage by [gtsummary_add_mean_diff()]).
 #' @seealso [gtsummary_add_mean_diff()]
 #' @export
-gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
+gtsummary_mean_diff <- function(data, variable, by, tbl, statistic = NULL, ...) {
 
   x <- data[[variable]]
   g <- data[[by]]
@@ -210,18 +243,29 @@ gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
   switch(
     var_type,
     categorical = {
-      # margin=1 -> proportions by rows (the sum of a row equals 1)
-      # margin=2 -> proportions by columns (the sum of a column equals 1)
-      prop <- prop.table(table(x, g), margin = 2)
-      d <- prop[, 2] - prop[, 1]
-      return(d)
+      if (is.null(statistic)) statistic <- "col_pct"
+      # unname: add_stat aligns the vector with the level rows by position
+      return(unname(gtsummary_prop_diff(x, g, statistic)))
     },
-    continuous = {
-      return(diff(tapply(x, g, mean, na.rm = TRUE)))
+    continuous = ,
+    continuous2 = {
+      if (is.null(statistic)) statistic <- "mean"
+      fun <- switch(
+        statistic,
+        mean = mean,
+        median = stats::median,
+        {
+          stop(paste0(
+            "ERROR: Statistic ", statistic,
+            " is not valid for continuous variable ", variable
+          ))
+        }
+      )
+      return(unname(diff(tapply(x, g, fun, na.rm = TRUE))))
     },
     dichotomous = {
-      prop <- prop.table(table(x, g), margin = 2)
-      d <- prop[, 2] - prop[, 1]
+      if (is.null(statistic)) statistic <- "col_pct"
+      d <- gtsummary_prop_diff(x, g, statistic)
       # the displayed level: gtsummary records it in var_level ("TRUE", "1",
       # "yes", ...); a hard d["TRUE"] lookup returned NA for 0/1-coded
       # variables. Fall back to the last level when var_level is absent.
@@ -234,7 +278,7 @@ gtsummary_mean_diff <- function(data, variable, by, tbl, ...) {
         error = function(e) NA_character_
       )
       if (is.null(lev) || is.na(lev) || !(lev %in% names(d))) lev <- utils::tail(names(d), 1)
-      return(d[lev])
+      return(unname(d[lev]))
     },
     {
       stop(paste0("ERROR: Unrecognized type ", var_type))
@@ -302,30 +346,210 @@ gtsummary_collapse_footnote_newlines <- function(tbl, replacement = " ") {
   return(tbl)
 }
 
+#' Extract the statistic placeholders of a glue template
+#'
+#' @param template A glue template string, e.g. `"{mean}\n{median}"`.
+#' @return Character vector of the unique placeholder names, brace-stripped
+#'   and trimmed.
+#' @noRd
+glue_stat_elements <- function(template) {
+  m <- regmatches(template, gregexpr("\\{[^{}]*\\}", template))[[1]]
+  unique(trimws(substr(m, 2, nchar(m) - 1)))
+}
+
+#' Format one between-group difference statistic
+#'
+#' @param x Raw numeric difference(s) from [gtsummary_mean_diff()].
+#' @param statistic The statistic name (`"mean"`, ..., `"cell_pct"`).
+#' @param digits `NULL` for the default formats (sigfig for mean/median,
+#'   2-decimal percentage points with a trailing `%` sign for the percentage
+#'   statistics), a non-negative integer for fixed decimal places, or a
+#'   formatting function whose output is used verbatim (no `%` appended).
+#' @return Character vector of formatted values.
+#' @noRd
+fmt_mean_diff <- function(x, statistic, digits) {
+  if (is.function(digits)) {
+    return(as.character(digits(x)))
+  }
+  if (statistic %in% c("mean", "median")) {
+    if (is.null(digits)) {
+      gtsummary::style_sigfig(x)
+    } else {
+      gtsummary::style_number(x, digits = digits, big.mark = ",")
+    }
+  } else {
+    # percentage-point differences, with the % sign appended automatically
+    sprintf("%.*f%%", if (is.null(digits)) 2 else digits, 100 * x)
+  }
+}
+
+#' Build the formatted difference cell(s) for one gtsummary variable
+#'
+#' Computes every statistic referenced by the variable's glue `template`
+#' through [gtsummary_mean_diff()], formats each with `fmt_mean_diff()`, and
+#' interpolates the template. Cells with a missing component are `NA`.
+#'
+#' @inheritParams gtsummary_mean_diff
+#' @param template Glue template string for this variable.
+#' @param digits Digits setting for this variable (see `fmt_mean_diff()`).
+#' @return Character vector, one element per displayed row of the variable.
+#' @noRd
+gtsummary_mean_diff_glue <- function(
+  data, variable, by, tbl, template, digits, ...
+) {
+  stats <- glue_stat_elements(template)
+  raw <- lapply(
+    stats,
+    function(s) gtsummary_mean_diff(data, variable, by, tbl, statistic = s, ...)
+  )
+  names(raw) <- stats
+  fmt <- lapply(stats, function(s) fmt_mean_diff(raw[[s]], s, digits))
+  names(fmt) <- stats
+  out <- as.character(glue::glue_data(fmt, template, .trim = FALSE))
+  # blank the cells where any component is missing
+  na_mask <- Reduce(`|`, lapply(raw, is.na))
+  out[na_mask] <- NA_character_
+  return(out)
+}
+
 #' Add a between-group difference column to a gtsummary table
 #'
 #' Adds a column of group differences computed by [gtsummary_mean_diff()] to a
-#' two-group `gtsummary` table, with a suitable header and number format.
-#' The column is named `diff_in_means`. Continuous rows show the difference
-#' in means (sigfig format); categorical and dichotomous rows carry the 0-1
-#' proportion difference from [gtsummary_mean_diff()] and are formatted as
-#' 0%-100% percentages with 2 decimal places (e.g. `15.23%`).
+#' two-group `gtsummary` table, with a suitable header. Cell contents are
+#' driven by `statistic`, a formula-list-selector of glue templates (as in
+#' [gtsummary::tbl_summary()]): each `{placeholder}` is replaced by the
+#' formatted between-group difference of that statistic, and surrounding
+#' literal text (`%` signs, separators, line breaks) is kept verbatim, so one
+#' cell can combine several statistics. The column is named `diff_in_means`
+#' whatever the chosen statistics and holds formatted text, not numbers.
 #' An explanatory footnote is attached to the column header; when the two
 #' `by`-group levels can be recovered from the table, the footnote names them
-#' and the direction of the difference (second level minus first).
+#' and the direction of the difference (second level minus first), and it
+#' describes the statistic(s) selected through `statistic`.
 #' See <https://stackoverflow.com/a/79876424/1719931>.
 #'
 #' @param table A two-group `gtsummary` table.
+#' @param statistic Formula-list-selector (as in [gtsummary::tbl_summary()])
+#'   of glue templates choosing which difference(s) each variable displays.
+#'   Available placeholders: `{mean}` and `{median}` for continuous variables;
+#'   `{col_pct}`, `{row_pct}`, and `{cell_pct}` for categorical and dichotomous
+#'   variables, i.e. differences in column, row, and cell percentages, in
+#'   percentage points with a trailing `%` sign appended automatically.
+#'   Templates can mix several placeholders with literal text, e.g.
+#'   `list(gtsummary::all_continuous() ~ "{mean}\n{median}",
+#'   gtsummary::all_categorical() ~ "{row_pct} / {col_pct}")`.
+#'   Variables not covered by the selector fall back to their type's
+#'   default (`"{mean}"` / `"{col_pct}"`).
+#' @param digits Formula-list-selector (as in [gtsummary::tbl_summary()])
+#'   overriding how a variable's differences are rounded. The same rounding
+#'   applies to every placeholder of the variable's template, so each value is
+#'   a single non-negative integer (not a vector) or a formatting function. An
+#'   integer is the number of decimal places: continuous statistics switch
+#'   from the default sigfig format to that many fixed decimal places;
+#'   percentage statistics change the decimal places of the percentage
+#'   (default 2), keeping the trailing `%` sign. A function is applied to the
+#'   raw difference of each placeholder and its output is used verbatim (no
+#'   `%` appended); note that percentage statistics are on the 0-1 scale.
+#'   Variables not covered keep the default formats.
+#'   Example: `list(gtsummary::all_continuous() ~ 1)`.
 #' @param footnote Footnote for the difference column: `TRUE` (default) adds
 #'   an auto-built explanation, a string is used as-is, `FALSE` adds none.
-#' @return The table with an added `diff_in_means` column.
+#' @return The table with an added `diff_in_means` column of formatted text.
 #' @seealso [gtsummary_mean_diff()], [gtsummary_rename_column()]
 #' @export
-gtsummary_add_mean_diff <- function(table, footnote = TRUE) {
+gtsummary_add_mean_diff <- function(
+  table,
+  statistic = list(
+    gtsummary::all_continuous() ~ "{mean}",
+    gtsummary::all_categorical() ~ "{col_pct}"
+  ),
+  digits = NULL,
+  footnote = TRUE
+) {
 
+  # resolve the formula-list-selector into a named list keyed on variable, as
+  # gtsummary::add_stat() does; both cards calls write the resolved list back
+  # into `statistic` in this frame
+  scoped <- gtsummary::scope_table_body(table$table_body)
+  cards::process_formula_selectors(scoped, statistic = statistic)
+  cards::fill_formula_selectors(
+    scoped,
+    statistic = list(
+      gtsummary::all_continuous() ~ "{mean}",
+      gtsummary::all_categorical() ~ "{col_pct}"
+    )
+  )
+  cards::check_list_elements(
+    x = statistic,
+    predicate = function(x) rlang::is_string(x),
+    error_msg = "The element values for the {.arg statistic} argument must be strings (glue templates)."
+  )
+
+  # resolve the digits formula-list-selector the same way; variables it does
+  # not cover keep the default formats
+  if (!is.null(digits)) {
+    cards::process_formula_selectors(scoped, digits = digits)
+    cards::check_list_elements(
+      x = digits,
+      predicate = function(x) {
+        is.function(x) ||
+          (is.numeric(x) && length(x) == 1 && !is.na(x) && x >= 0 &&
+             x == trunc(x))
+      },
+      error_msg = "The element values for the {.arg digits} argument must be single non-negative integers or functions."
+    )
+  } else {
+    digits <- list()
+  }
+
+  # each template must reference only known statistics, compatible with its
+  # variable's assigned type
+  valid_stats <- c("mean", "median", "col_pct", "row_pct", "cell_pct")
+  stats_by_var <- lapply(statistic, glue_stat_elements)
+  var_types <- distinct(table$table_body, variable, var_type)
+  var_types <- stats::setNames(var_types$var_type, var_types$variable)
+  for (v in names(statistic)) {
+    stats_v <- stats_by_var[[v]]
+    if (length(stats_v) == 0) {
+      cli::cli_abort(
+        "The {.arg statistic} value for variable {.val {v}} contains no statistic placeholder; available placeholders: {.val {valid_stats}}."
+      )
+    }
+    unknown <- setdiff(stats_v, valid_stats)
+    if (length(unknown) > 0) {
+      cli::cli_abort(
+        "Unknown statistic {.val {unknown}} in the {.arg statistic} template for variable {.val {v}}; must be one of {.val {valid_stats}}."
+      )
+    }
+    allowed <- switch(
+      var_types[[v]],
+      continuous = ,
+      continuous2 = c("mean", "median"),
+      categorical = ,
+      dichotomous = c("col_pct", "row_pct", "cell_pct"),
+      character(0)
+    )
+    bad <- setdiff(stats_v, allowed)
+    if (length(allowed) > 0 && length(bad) > 0) {
+      cli::cli_abort(
+        "Statistic {.val {bad}} is not valid for {var_types[[v]]} variable {.val {v}}; must be one of {.val {allowed}}."
+      )
+    }
+  }
+
+  # the worker returns formatted text (a template can combine several
+  # statistics per cell), so no modify_fmt_fun pass is needed afterwards
   x <- gtsummary::add_stat(
     table,
-    fns = gtsummary::everything() ~ gtsummary_mean_diff,
+    fns = gtsummary::everything() ~
+      function(data, variable, by, tbl, ...) {
+        gtsummary_mean_diff_glue(
+          data, variable, by, tbl,
+          template = statistic[[variable]],
+          digits = digits[[variable]],
+          ...
+        )
+      },
     location = list(
       gtsummary::all_continuous() ~ "label",
       gtsummary::all_categorical() ~ "level",
@@ -333,21 +557,7 @@ gtsummary_add_mean_diff <- function(table, footnote = TRUE) {
     )
   ) %>%
     gtsummary_rename_column("add_stat_1", "diff_in_means") %>%
-    gtsummary::modify_header(diff_in_means = "**Δ / Δ%**") %>%
-    # continuous rows: difference in means, plain sigfig
-    gtsummary::modify_fmt_fun(
-      diff_in_means = gtsummary::label_style_sigfig(),
-      rows = var_type == "continuous"
-    ) %>%
-    # categorical/dichotomous rows: 0-1 proportion differences rendered as
-    # 0%-100% percentages, fixed 2 decimal places (label_style_percent is
-    # not used: it switches to more decimals for values < 1%)
-    gtsummary::modify_fmt_fun(
-      diff_in_means = function(x) {
-        ifelse(is.na(x), NA_character_, sprintf("%.2f%%", 100 * x))
-      },
-      rows = var_type %in% c("categorical", "dichotomous")
-    )
+    gtsummary::modify_header(diff_in_means = "**Δ / Δ%**")
 
   # explanatory footnote on the difference column ------------------------------
   if (isTRUE(footnote)) {
@@ -361,15 +571,76 @@ gtsummary_add_mean_diff <- function(table, footnote = TRUE) {
       },
       error = function(e) NULL
     )
-    footnote <-
+    direction <-
       if (!is.null(by_levels) && length(by_levels) == 2) {
-        sprintf(
-          "Δ / Δ%%: difference between the two groups (%s minus %s): difference in means for continuous variables, difference in proportions in percentage points for categorical and dichotomous variables.",
-          by_levels[2], by_levels[1]
-        )
+        sprintf("%s minus %s", by_levels[2], by_levels[1])
       } else {
-        "Δ / Δ%: difference between the two groups (second minus first): difference in means for continuous variables, difference in proportions in percentage points for categorical and dichotomous variables."
+        "second minus first"
       }
+    # compact description of the selected statistics: compute each one's
+    # scope (generic when it covers every variable of its type, else the
+    # variable list), then merge the statistics sharing a scope into one
+    # segment, e.g. "means and medians for continuous variables"
+    fam_vars <- list(
+      continuous = names(var_types)[
+        var_types %in% c("continuous", "continuous2")
+      ],
+      categorical = names(var_types)[
+        var_types %in% c("categorical", "dichotomous")
+      ]
+    )
+    fam_label <- c(
+      continuous = "for continuous variables",
+      categorical = "for categorical and dichotomous variables"
+    )
+    used <- intersect(valid_stats, unique(unlist(stats_by_var)))
+    scopes <- vapply(
+      used,
+      function(s) {
+        vars_s <- names(stats_by_var)[
+          vapply(stats_by_var, function(st) s %in% st, logical(1))
+        ]
+        fam <- ifelse(s %in% c("mean", "median"), "continuous", "categorical")
+        if (setequal(vars_s, fam_vars[[fam]])) {
+          fam_label[[fam]]
+        } else {
+          paste0("for ", paste(vars_s, collapse = ", "))
+        }
+      },
+      character(1)
+    )
+    join_and <- function(x) {
+      if (length(x) <= 1) {
+        return(as.character(x))
+      }
+      paste(paste(x[-length(x)], collapse = ", "), x[length(x)], sep = " and ")
+    }
+    stats_label <- function(ss) {
+      parts <- character(0)
+      cont <- intersect(c("mean", "median"), ss)
+      if (length(cont) > 0) {
+        parts <- c(parts, join_and(c(mean = "means", median = "medians")[cont]))
+      }
+      pct <- intersect(c("col_pct", "row_pct", "cell_pct"), ss)
+      if (length(pct) > 0) {
+        mods <- c(col_pct = "column", row_pct = "row", cell_pct = "cell")[pct]
+        parts <- c(
+          parts,
+          paste0(join_and(unname(mods)), " percentages (in percentage points)")
+        )
+      }
+      join_and(parts)
+    }
+    segments <- vapply(
+      unique(scopes),
+      function(sc) paste(stats_label(used[scopes == sc]), sc),
+      character(1)
+    )
+    footnote <- sprintf(
+      "Δ / Δ%%: difference between the two groups (%s): %s.",
+      direction,
+      paste(segments, collapse = "; ")
+    )
   }
   if (is.character(footnote)) {
     x <- gtsummary::modify_footnote_header(

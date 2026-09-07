@@ -87,7 +87,25 @@ toydf %>%
       gtsummary::all_dichotomous() ~ "label"
     )
   ) %>%
-  raffalib::gtsummary_add_mean_diff() %>%
+  raffalib::gtsummary_add_mean_diff(
+    # tbl_summary-style formula-list-selector of glue templates:
+    # {mean}/{median} for continuous, {col_pct}/{row_pct}/{cell_pct} for
+    # categorical and dichotomous (percentage points; the % sign is appended
+    # automatically). Templates can combine several statistics with literal
+    # text. Unselected variables fall back to their type's default
+    # ("{mean}" / "{col_pct}")
+    statistic = list(
+      age ~ "{median}",
+      height ~ "{mean}\n{median}",
+      all_dichotomous() ~ "{row_pct}"
+    ),
+    # tbl_summary-style digits: an integer sets fixed decimal places (of the
+    # percentage for categorical/dichotomous), a function formats the raw value
+    digits = list(
+      age ~ 0,
+      all_dichotomous() ~ 1
+    )
+  ) %>%
   add_p() %>%
   raffalib::gtsummary_add_significance_stars() %>%
   add_overall() %>%
