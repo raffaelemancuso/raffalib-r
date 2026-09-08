@@ -1031,7 +1031,11 @@ flextable2docx <- function(
       }
       usable <- paper_w_mm / 25.4 -
         wp("page_margin_left", 1) - wp("page_margin_right", 1)
-      w1 <- min(flextable::dim_pretty(tbl, part = "body")$widths[1], 0.4 * usable)
+      # Word lays text out a little wider than gdtools measures it: a term
+      # measured at exactly the column width wraps its last character onto a
+      # second line ("log(KohesioUnitCost" / ")"), hence the 5% + 0.05 in slack
+      w1 <- 1.05 * flextable::dim_pretty(tbl, part = "body")$widths[1] + 0.05
+      w1 <- min(w1, 0.4 * usable)
       k <- length(tbl$col_keys) - 1L
       column_width <- c(w1, rep((usable - w1) / k, k))
       layout <- "fixed"

@@ -33,6 +33,27 @@ col_prop_diff <- function(df, var, level) {
   unname(prop[level, "M"] - prop[level, "F"])
 }
 
+# decimal places of the first number in the group cells of a variable
+# (mean / median) or of their percentage
+shown_decimals <- function(tbl, var, pct = FALSE) {
+  cells <- unlist(tbl$table_body[tbl$table_body$variable == var, c("stat_1", "stat_2")])
+  cells <- cells[!is.na(cells)]
+  pattern <- if (pct) "[0-9.]+(?=%)" else "^-?[0-9,]+(\\.[0-9]+)?"
+  nums <- regmatches(cells, regexpr(pattern, cells, perl = TRUE))
+  max(nchar(sub("^[^.]*\\.?", "", nums)))
+}
+
+# the difference formatted with the decimals shown by the group columns
+expected_mean_diff <- function(tbl, toydf, var, fun = mean) {
+  gtsummary::style_number(
+    mean_diff(toydf, var, fun),
+    digits = shown_decimals(tbl, var), big.mark = ","
+  )
+}
+expected_pct_diff <- function(tbl, var, d) {
+  sprintf("%.*f%%", shown_decimals(tbl, var, pct = TRUE), 100 * d)
+}
+
 test_that("gtsummary_add_mean_diff defaults match manual mean/col_pct diffs", {
   toydf <- toydf_two_groups()
   tbl <- gtsummary::tbl_summary(toydf, by = "gender", missing = "no") |>
@@ -41,11 +62,11 @@ test_that("gtsummary_add_mean_diff defaults match manual mean/col_pct diffs", {
 
   expect_equal(
     body$diff_in_means[body$variable == "height"],
-    gtsummary::style_sigfig(mean_diff(toydf, "height"))
+    expected_mean_diff(tbl, toydf, "height")
   )
   expect_equal(
     body$diff_in_means[body$variable == "education" & body$label == "BSC"],
-    sprintf("%.2f%%", 100 * col_prop_diff(toydf, "education", "BSC"))
+    expected_pct_diff(tbl, "education", col_prop_diff(toydf, "education", "BSC"))
   )
 
   fn <- diff_footnote(tbl)
@@ -73,28 +94,32 @@ test_that("glue templates combine several statistics per cell", {
   expect_equal(
     body$diff_in_means[body$variable == "height"],
     paste0(
-      gtsummary::style_sigfig(mean_diff(toydf, "height")),
+      expected_mean_diff(tbl, toydf, "height"),
       "\n",
-      gtsummary::style_sigfig(mean_diff(toydf, "height", stats::median))
+      expected_mean_diff(tbl, toydf, "height", stats::median)
     )
   )
 
   # age not selected -> falls back to the continuous default "{mean}"
   expect_equal(
     body$diff_in_means[body$variable == "age"],
-    gtsummary::style_sigfig(mean_diff(toydf, "age"))
+    expected_mean_diff(tbl, toydf, "age")
   )
 
   prop_row <- prop.table(table(toydf$education, toydf$gender), margin = 1)
   expect_equal(
     body$diff_in_means[body$variable == "education" & body$label == "BSC"],
-    sprintf("%.2f%%", 100 * unname(prop_row["BSC", "M"] - prop_row["BSC", "F"]))
+    expected_pct_diff(
+      tbl, "education", unname(prop_row["BSC", "M"] - prop_row["BSC", "F"])
+    )
   )
 
   prop_cell <- prop.table(table(toydf$high_income, toydf$gender))
   expect_equal(
     body$diff_in_means[body$variable == "high_income"],
-    sprintf("%.2f%%", 100 * unname(prop_cell["TRUE", "M"] - prop_cell["TRUE", "F"]))
+    expected_pct_diff(
+      tbl, "high_income", unname(prop_cell["TRUE", "M"] - prop_cell["TRUE", "F"])
+    )
   )
 
   fn <- diff_footnote(tbl)
@@ -165,10 +190,12 @@ test_that("the digits formula-list-selector overrides rounding", {
     body$diff_in_means[body$variable == "high_income"],
     "^-?0\\.[0-9]{4}$"
   )
-  # variables not covered keep the default (education: 2-decimal percentage)
+  # variables not covered follow the decimals of the group columns
+  # (education: gtsummary's default whole-number percentages)
+  expect_equal(shown_decimals(tbl, "education", pct = TRUE), 0)
   expect_match(
     body$diff_in_means[body$variable == "education" & body$label == "BSC"],
-    "^-?[0-9]+\\.[0-9]{2}%$"
+    "^-?[0-9]+%$"
   )
 
   # categorical with integer digits: decimal places of the percentage,
@@ -183,6 +210,90 @@ test_that("the digits formula-list-selector overrides rounding", {
   expect_match(
     body2$diff_in_means[body2$variable == "education" & body2$label == "HS"],
     "^-?[0-9]+%$"
+  )
+})
+
+test_that("the difference copies the decimals shown by the group columns", {
+  toydf <- toydf_two_groups()
+  tbl <- gtsummary::tbl_summary(
+    toydf,
+    by = "gender",
+    missing = "no",
+    statistic = list(
+      gtsummary::all_continuous() ~ "{mean} ({sd})",
+      gtsummary::all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = list(height ~ 3, age ~ 0, education ~ c(0, 1), high_income ~ c(0, 2))
+  ) |>
+    gtsummary_add_mean_diff()
+  body <- diff_col(tbl)
+
+  # continuous: as many decimals as the mean of the group columns
+  expect_match(body$diff_in_means[body$variable == "height"], "^-?[0-9,]+\\.[0-9]{3}$")
+  expect_match(body$diff_in_means[body$variable == "age"], "^-?[0-9,]+$")
+  expect_equal(
+    body$diff_in_means[body$variable == "height"],
+    gtsummary::style_number(mean_diff(toydf, "height"), digits = 3, big.mark = ",")
+  )
+  # percentages: as many decimals as the percentage of the group columns
+  expect_match(
+    body$diff_in_means[body$variable == "education" & body$label == "BSC"],
+    "^-?[0-9]+\\.[0-9]{1}%$"
+  )
+  expect_match(body$diff_in_means[body$variable == "high_income"], "^-?[0-9]+\\.[0-9]{2}%$")
+
+  # the mean on one line and the SD on the next: still the first number
+  tbl2 <- gtsummary::tbl_summary(
+    toydf,
+    by = "gender",
+    missing = "no",
+    statistic = gtsummary::all_continuous() ~ "{mean}\n({sd})",
+    digits = gtsummary::all_continuous() ~ 2
+  ) |>
+    gtsummary_add_mean_diff()
+  body2 <- diff_col(tbl2)
+  expect_match(body2$diff_in_means[body2$variable == "height"], "^-?[0-9,]+\\.[0-9]{2}$")
+
+  # nothing to read (no percentage shown): the fallbacks
+  tbl3 <- gtsummary::tbl_summary(
+    toydf,
+    by = "gender",
+    missing = "no",
+    statistic = gtsummary::all_categorical() ~ "{n}"
+  ) |>
+    gtsummary_add_mean_diff()
+  body3 <- diff_col(tbl3)
+  expect_match(
+    body3$diff_in_means[body3$variable == "education" & body3$label == "BSC"],
+    "^-?[0-9]+\\.[0-9]{2}%$"
+  )
+})
+
+test_that("gtsummary_set_theme puts the SD on a new line by default", {
+  toydf <- toydf_two_groups()
+  gtsummary_set_theme()
+  withr::defer(gtsummary::reset_gtsummary_theme())
+
+  tbl <- gtsummary::tbl_summary(toydf, by = "gender", missing = "no")
+  body <- tbl$table_body
+  expect_match(body$stat_1[body$variable == "height"], "^[0-9,.]+\n\\([0-9,.]+\\)$")
+  expect_match(body$stat_1[body$variable == "education" & body$label == "BSC"], "^[0-9,]+ \\([0-9.]+%\\)$")
+
+  # an explicit statistic still wins
+  tbl2 <- gtsummary::tbl_summary(
+    toydf,
+    by = "gender",
+    missing = "no",
+    statistic = gtsummary::all_continuous() ~ "{median}"
+  )
+  expect_match(tbl2$table_body$stat_1[tbl2$table_body$variable == "height"], "^[0-9,.]+$")
+
+  # the difference column reads its digits from the first line
+  tbl3 <- gtsummary_add_mean_diff(tbl)
+  body3 <- diff_col(tbl3)
+  expect_equal(
+    body3$diff_in_means[body3$variable == "height"],
+    expected_mean_diff(tbl, toydf, "height")
   )
 })
 

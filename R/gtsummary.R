@@ -357,29 +357,68 @@ glue_stat_elements <- function(template) {
   unique(trimws(substr(m, 2, nchar(m) - 1)))
 }
 
+#' Decimal places the group columns display for a statistic
+#'
+#' Reads from the formatted group columns of the table (`stat_1`, `stat_2`,
+#' ...) how many decimal places a variable's statistic is shown with: the
+#' first number of the cells for `mean` and `median` (the location statistic
+#' comes first in gtsummary's templates), the number carrying the `%` sign for
+#' the percentage statistics. The largest count over the cells is returned, so
+#' the difference column reads like its sources.
+#'
+#' @param tbl The `gtsummary` table being built.
+#' @param variable Variable name.
+#' @param statistic The statistic name (`"mean"`, ..., `"cell_pct"`).
+#' @return A non-negative integer, or `NA` when no such number is displayed
+#'   (no group column, empty cells, no percentage in the cells).
+#' @noRd
+source_digits <- function(tbl, variable, statistic) {
+  body <- tbl$table_body
+  cols <- grep("^stat_[1-9][0-9]*$", names(body), value = TRUE)
+  cells <- unlist(body[body$variable %in% variable, cols, drop = FALSE])
+  cells <- cells[!is.na(cells)]
+  if (length(cells) == 0) {
+    return(NA_integer_)
+  }
+  pattern <- if (statistic %in% c("mean", "median")) {
+    "-?[0-9][0-9,]*(\\.[0-9]+)?"
+  } else {
+    "-?[0-9][0-9,]*(\\.[0-9]+)?(?=\\s*%)"
+  }
+  nums <- regmatches(cells, regexpr(pattern, cells, perl = TRUE))
+  if (length(nums) == 0) {
+    return(NA_integer_)
+  }
+  # the digits after the decimal point, none when there is no point
+  decimals <- ifelse(grepl(".", nums, fixed = TRUE), sub("^[^.]*\\.", "", nums), "")
+  as.integer(max(nchar(decimals)))
+}
+
 #' Format one between-group difference statistic
 #'
 #' @param x Raw numeric difference(s) from [gtsummary_mean_diff()].
 #' @param statistic The statistic name (`"mean"`, ..., `"cell_pct"`).
-#' @param digits `NULL` for the default formats (sigfig for mean/median,
-#'   2-decimal percentage points with a trailing `%` sign for the percentage
-#'   statistics), a non-negative integer for fixed decimal places, or a
-#'   formatting function whose output is used verbatim (no `%` appended).
+#' @param digits A non-negative integer for fixed decimal places, a
+#'   formatting function whose output is used verbatim (no `%` appended), or
+#'   `NULL`/`NA` for the fallback formats (sigfig for mean/median, 2-decimal
+#'   percentage points with a trailing `%` sign for the percentage
+#'   statistics).
 #' @return Character vector of formatted values.
 #' @noRd
 fmt_mean_diff <- function(x, statistic, digits) {
   if (is.function(digits)) {
     return(as.character(digits(x)))
   }
+  fallback <- is.null(digits) || is.na(digits)
   if (statistic %in% c("mean", "median")) {
-    if (is.null(digits)) {
+    if (fallback) {
       gtsummary::style_sigfig(x)
     } else {
       gtsummary::style_number(x, digits = digits, big.mark = ",")
     }
   } else {
     # percentage-point differences, with the % sign appended automatically
-    sprintf("%.*f%%", if (is.null(digits)) 2 else digits, 100 * x)
+    sprintf("%.*f%%", if (fallback) 2 else digits, 100 * x)
   }
 }
 
@@ -391,7 +430,9 @@ fmt_mean_diff <- function(x, statistic, digits) {
 #'
 #' @inheritParams gtsummary_mean_diff
 #' @param template Glue template string for this variable.
-#' @param digits Digits setting for this variable (see `fmt_mean_diff()`).
+#' @param digits Digits setting for this variable (see `fmt_mean_diff()`);
+#'   `NULL` copies, statistic by statistic, the decimal places the group
+#'   columns display (`source_digits()`).
 #' @return Character vector, one element per displayed row of the variable.
 #' @noRd
 gtsummary_mean_diff_glue <- function(
@@ -403,7 +444,10 @@ gtsummary_mean_diff_glue <- function(
     function(s) gtsummary_mean_diff(data, variable, by, tbl, statistic = s, ...)
   )
   names(raw) <- stats
-  fmt <- lapply(stats, function(s) fmt_mean_diff(raw[[s]], s, digits))
+  fmt <- lapply(stats, function(s) {
+    d <- if (is.null(digits)) source_digits(tbl, variable, s) else digits
+    fmt_mean_diff(raw[[s]], s, d)
+  })
   names(fmt) <- stats
   out <- as.character(glue::glue_data(fmt, template, .trim = FALSE))
   # blank the cells where any component is missing
@@ -441,16 +485,23 @@ gtsummary_mean_diff_glue <- function(
 #'   Variables not covered by the selector fall back to their type's
 #'   default (`"{mean}"` / `"{col_pct}"`).
 #' @param digits Formula-list-selector (as in [gtsummary::tbl_summary()])
-#'   overriding how a variable's differences are rounded. The same rounding
-#'   applies to every placeholder of the variable's template, so each value is
-#'   a single non-negative integer (not a vector) or a formatting function. An
-#'   integer is the number of decimal places: continuous statistics switch
-#'   from the default sigfig format to that many fixed decimal places;
-#'   percentage statistics change the decimal places of the percentage
-#'   (default 2), keeping the trailing `%` sign. A function is applied to the
-#'   raw difference of each placeholder and its output is used verbatim (no
-#'   `%` appended); note that percentage statistics are on the 0-1 scale.
-#'   Variables not covered keep the default formats.
+#'   overriding how a variable's differences are rounded. By default (and for
+#'   the variables the selector does not cover) each difference is shown with
+#'   the decimal places the two group columns display for the same statistic,
+#'   read from the table: the mean or median (the first number of the cells)
+#'   for `{mean}` and `{median}`, the percentage for the percentage
+#'   statistics; so `-1.54` next to `3.52 (20.92)` and `1.98 (8.13)`, and
+#'   `-3%` next to `(45%)` and `(42%)`. When the group columns show no such
+#'   number the fallbacks are gtsummary's sigfig format for continuous
+#'   statistics and 2 decimal places for percentages.
+#'   The same rounding applies to every placeholder of the variable's
+#'   template, so each value of the selector is a single non-negative integer
+#'   (not a vector) or a formatting function. An integer is the number of
+#'   decimal places: continuous statistics get that many fixed decimal places;
+#'   percentage statistics change the decimal places of the percentage,
+#'   keeping the trailing `%` sign. A function is applied to the raw
+#'   difference of each placeholder and its output is used verbatim (no `%`
+#'   appended); note that percentage statistics are on the 0-1 scale.
 #'   Example: `list(gtsummary::all_continuous() ~ 1)`.
 #' @param footnote Footnote for the difference column: `TRUE` (default) adds
 #'   an auto-built explanation, a string is used as-is, `FALSE` adds none.
@@ -652,4 +703,40 @@ gtsummary_add_mean_diff <- function(
   }
 
   return(x)
+}
+
+#' Set the gtsummary defaults of the summary tables
+#'
+#' Sets a `gtsummary` theme so that [gtsummary::tbl_summary()] needs no
+#' `statistic` argument: continuous variables show the mean with the standard
+#' deviation, in parentheses, on the next line (`"{mean}\n({sd})"`: the line
+#' break is rendered by flextable in Word), categorical variables the count
+#' with the percentage (`"{n} ({p}%)"`). A `statistic` argument given to a
+#' call still wins. Call it once, after loading raffalib;
+#' [gtsummary::reset_gtsummary_theme()] undoes it.
+#'
+#' @param continuous_stat,categorical_stat Glue templates of the statistics
+#'   of continuous and categorical variables, as in the `statistic` argument
+#'   of [gtsummary::tbl_summary()].
+#' @return The theme set, invisibly (a named list of theme elements).
+#' @examples
+#' \dontrun{
+#' gtsummary_set_theme()
+#' gtsummary::tbl_summary(mtcars, by = am, include = c(mpg, cyl))
+#' gtsummary::reset_gtsummary_theme()
+#' }
+#' @export
+gtsummary_set_theme <- function(
+  continuous_stat = "{mean}\n({sd})",
+  categorical_stat = "{n} ({p}%)"
+) {
+  theme <- list(
+    "pkgwide-str:theme_name" = "raffalib",
+    "tbl_summary-arg:statistic" = list(
+      gtsummary::all_continuous() ~ continuous_stat,
+      gtsummary::all_categorical() ~ categorical_stat
+    )
+  )
+  gtsummary::set_gtsummary_theme(theme)
+  invisible(theme)
 }
