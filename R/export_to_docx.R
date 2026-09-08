@@ -59,6 +59,10 @@ compute_max_size <- function(doc_gg) {
 #' @param caption_text Caption to place above the figure/table.
 #' @param caption_font_family,caption_font_size Caption font family and size (pt).
 #' @param caption_bold,caption_italic Caption emphasis flags.
+#' @param caption_style Word paragraph style of the caption (default
+#'   `"heading 1"`), a heading style so that the caption is listed in the
+#'   navigation pane and in the PDF outline built from the headings. Must exist
+#'   in officer's default Word template.
 #' @param page_landscape Whether the page should be landscape (default `FALSE`).
 #' @param paper_format Paper size key, one of the names of the internal
 #'   `paper_sizes` table (e.g. `"A4"`, `"A3"`, `"letter"`).
@@ -73,6 +77,7 @@ prepare_docx <- function(
   caption_font_size = 12,
   caption_bold = TRUE,
   caption_italic = FALSE,
+  caption_style = "heading 1",
   page_landscape = FALSE,
   paper_format = "A4",
   page_margin_bottom = 1,
@@ -148,13 +153,30 @@ prepare_docx <- function(
   #
   # fpar() supports ftext(), external_img(), run_*() functions (i.e. run_autonum(), run_word_field())
   # when output is Word, and simple strings.
-  caption_fpar <- officer::fpar(caption_ftext)
-
-  # Create document
+  # The caption paragraph takes a heading style (`caption_style`, "heading 1"
+  # by default), so it is listed in Word's navigation pane and becomes a
+  # bookmark when the PDF outline is built from the headings. The run keeps
+  # the explicit font above and the paragraph its zero spacing, so the look
+  # does not change; only the style's outline level and keep-with-next apply.
+  # The headings of officer's default template are numbered ("1.", set in the
+  # style's own font): the numbering is switched off on the paragraph (numId
+  # 0), which fp_par() cannot express, hence the edit of the paragraph XML.
+  # An empty caption stays a plain paragraph (a heading would list a blank
+  # entry).
   docx <- officer::read_docx()
-
-  # Add caption
-  docx <- docx %>% officer::body_add_fpar(caption_fpar)
+  if (nzchar(caption_text)) {
+    caption_fpar <- officer::fpar(
+      caption_ftext, fp_p = officer::fp_par(word_style = caption_style)
+    )
+    caption_xml <- sub(
+      "(<w:pStyle [^>]*/>)",
+      "\\1<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"0\"/></w:numPr>",
+      officer::to_wml(caption_fpar, add_ns = TRUE)
+    )
+    docx <- officer::body_add_xml(docx, caption_xml)
+  } else {
+    docx <- officer::body_add_fpar(docx, officer::fpar(caption_ftext))
+  }
 
   # Return
   outs <- list(
