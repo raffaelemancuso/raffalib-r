@@ -900,7 +900,9 @@ flextable_subset_body_rows <- function(part, idx) {
 #' `modelsummary`/`gtsummary`) to a `.docx` file, applying a uniform font,
 #' alignment, padding and page-filling column widths. Cells are anchored
 #' "Align Top Left" (Word's naming) in the first column and "Align Top
-#' Center" in every other column, across header, body and footer.
+#' Center" in every other column, across header, body and footer; a body row
+#' merged across every column (a group header built by
+#' [flextable::as_grouped_data()]) keeps the alignment it already carries.
 #'
 #' @param tbl A `flextable` object.
 #' @param outfp Output file path for the `.docx` file.
@@ -909,6 +911,10 @@ flextable_subset_body_rows <- function(part, idx) {
 #' @param table_alignment Placement of the whole table on the page, one of
 #'   `"left"`, `"center"`, `"right"` (not the cell text alignment, which is
 #'   fixed as described above).
+#' @param left_columns Indices of the columns whose cells are left-aligned
+#'   (default `1`, the term column); every other column is centred. A text
+#'   column of a descriptive table (`c(1, 2)` for a term and a description)
+#'   reads better left-aligned.
 #' @param padding.offset.top,padding.offset.bottom,padding.offset.left,padding.offset.right
 #'   Per-side cell padding OFFSETS in pt, applied to every part (header,
 #'   body, footer). These are never absolute values: each cell's current
@@ -963,6 +969,7 @@ flextable2docx <- function(
   font_name = "Aptos",
   font_size = 12,
   table_alignment = "left",
+  left_columns = 1,
   padding.offset.top = NULL,
   padding.offset.bottom = NULL,
   padding.offset.left = -5,
@@ -1009,16 +1016,34 @@ flextable2docx <- function(
   # column, "Align Top Center" for the others. Top-anchoring keeps rows
   # reading level when cells differ in line count (multi-line terms,
   # estimate + SE cells). Footer notes are unaffected: they are merged rows
-  # anchored on the left-aligned first column.
-  tbl %<>%
-    flextable::valign(valign = "top", part = "all") %>%
-    flextable::align(j = 1, align = "left", part = "all")
-  if (length(tbl$col_keys) > 1) {
-    tbl %<>% flextable::align(
-      j = seq(2, length(tbl$col_keys)),
-      align = "center",
-      part = "all"
-    )
+  # anchored on the left-aligned first column. A body row merged across every
+  # column (a group header, as flextable::as_grouped_data() builds them) keeps
+  # the alignment it carries, so a caller can centre it.
+  n_cols <- length(tbl$col_keys)
+  left_cols <- intersect(as.integer(left_columns), seq_len(n_cols))
+  center_cols <- setdiff(seq_len(n_cols), left_cols)
+  tbl %<>% flextable::valign(valign = "top", part = "all")
+  for (part_nm in c("header", "footer")) {
+    if (flextable::nrow_part(tbl, part_nm) == 0) next
+    if (length(left_cols) > 0) {
+      tbl %<>% flextable::align(j = left_cols, align = "left", part = part_nm)
+    }
+    if (length(center_cols) > 0) {
+      tbl %<>% flextable::align(j = center_cols, align = "center", part = part_nm)
+    }
+  }
+  n_body <- flextable::nrow_part(tbl, "body")
+  if (n_body > 0) {
+    full_span <- which(tbl$body$spans$rows[, 1] == n_cols & n_cols > 1)
+    body_rows <- setdiff(seq_len(n_body), full_span)
+    if (length(body_rows) > 0) {
+      if (length(left_cols) > 0) {
+        tbl %<>% flextable::align(i = body_rows, j = left_cols, align = "left", part = "body")
+      }
+      if (length(center_cols) > 0) {
+        tbl %<>% flextable::align(i = body_rows, j = center_cols, align = "center", part = "body")
+      }
+    }
   }
 
   # list names are flextable::padding()'s argument names; values are the
@@ -1135,28 +1160,39 @@ flextable2docx <- function(
 #' The runs of each footer row of a flextable
 #'
 #' Internal helper of [flextable2docx()]: for every row of the footer part,
-#' the formatted runs of its cells (a footer note is normally one cell merged
-#' across the table, so the first column carries it) as one data frame with
-#' the columns `txt`, `bold`, `italic` and `vertical.align`, empty runs
-#' dropped. Rows whose every run is empty are skipped.
+#' the formatted runs of its cells as one data frame with the columns `txt`,
+#' `bold`, `italic` and `vertical.align`, empty runs dropped. A footer note is
+#' normally one cell merged across the table, and `flextable` (as
+#' `modelsummary` and `gtsummary` build it) keeps the note's text in every
+#' merged-away cell too, so only the cells that start a horizontal span are
+#' read, and a cell repeating the text of the previous one is skipped. Rows
+#' whose every run is empty are skipped.
 #'
 #' @param tbl A `flextable` with a footer part.
 #' @return A list of data frames, one per non-empty footer row, in order.
 #' @keywords internal
 flextable_footer_runs <- function(tbl) {
   content <- tbl$footer$content$data
+  spans <- tbl$footer$spans$rows
   cols <- c("txt", "bold", "italic", "vertical.align")
   out <- list()
   for (i in seq_len(nrow(content))) {
-    runs <- do.call(rbind, lapply(seq_len(ncol(content)), function(j) {
+    cells <- list()
+    previous <- NULL
+    for (j in seq_len(ncol(content))) {
+      if (!is.null(spans) && spans[i, j] == 0) next # merged into the cell on its left
       cell <- content[i, j][[1]]
-      if (is.null(cell) || nrow(cell) == 0) return(NULL)
+      if (is.null(cell) || nrow(cell) == 0) next
       for (nm in setdiff(cols, names(cell))) cell[[nm]] <- NA
-      cell[, cols, drop = FALSE]
-    }))
-    if (is.null(runs)) next
-    runs <- runs[!is.na(runs$txt) & nzchar(runs$txt), , drop = FALSE]
-    if (nrow(runs) > 0) out[[length(out) + 1]] <- runs
+      cell <- cell[, cols, drop = FALSE]
+      cell <- cell[!is.na(cell$txt) & nzchar(cell$txt), , drop = FALSE]
+      if (nrow(cell) == 0) next
+      text <- paste(cell$txt, collapse = "")
+      if (identical(text, previous)) next
+      previous <- text
+      cells[[length(cells) + 1]] <- cell
+    }
+    if (length(cells) > 0) out[[length(out) + 1]] <- do.call(rbind, cells)
   }
   out
 }
