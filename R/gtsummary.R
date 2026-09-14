@@ -740,3 +740,95 @@ gtsummary_set_theme <- function(
   gtsummary::set_gtsummary_theme(theme)
   invisible(theme)
 }
+
+
+#' Add a column with the row share of one `by` level
+#'
+#' A balance table built with [gtsummary::tbl_summary()] `by` a two-level
+#' group prints, in each categorical cell, the share of the group falling in
+#' the row category (the column percentage). The complementary reading, the
+#' share of one group *within* the category (the row percentage of that
+#' group: the treated share of each cohort, of each field), is often the
+#' interesting one, but printing both percentages in every cell overloads the
+#' table. This helper adds that row share as one column: for a categorical
+#' variable one value per level, for a dichotomous variable (shown on a single
+#' row) the share of `level` among the units that have the attribute (the
+#' variable is read with `as.logical()`, so it must be logical or 0/1).
+#' Continuous rows stay empty.
+#'
+#' @param tbl A `tbl_summary` built with a `by` variable.
+#' @param level The `by` level whose row share is reported, spelled as in the
+#'   column headers (e.g. `"AI"`).
+#' @param header Column header (markdown); a glue template that may use
+#'   `{level}`.
+#' @param footnote Footnote attached to the column; a glue template that may
+#'   use `{level}`. `NULL` adds none.
+#' @param digits Decimal places of the percentage.
+#' @param column Name of the new column in the table body.
+#' @return The table with the added column.
+#' @seealso [gtsummary_add_mean_diff()]
+#' @export
+gtsummary_add_row_share <- function(
+  tbl,
+  level,
+  header = "**{level} share**",
+  footnote = "Share of {level} within the category (row percentage).",
+  digits = 1,
+  column = "row_share"
+) {
+  stopifnot(inherits(tbl, "gtsummary"), rlang::is_string(level), rlang::is_string(column))
+  by <- tbl$inputs$by
+  if (is.null(by)) {
+    stop("`tbl` must be built with a `by` variable")
+  }
+  # gtsummary 2.x keeps no df_by slot: the levels come from the input data
+  by_levels <- levels(factor(tbl$inputs$data[[by]]))
+  if (!(level %in% by_levels)) {
+    stop(glue::glue(
+      "`level` must be one of the `by` levels: {paste(by_levels, collapse = ', ')}"
+    ))
+  }
+  fmt <- function(x) {
+    paste0(gtsummary::style_number(100 * x, digits = digits), "%")
+  }
+  fn_cat <- function(data, variable, by, ...) {
+    lev <- levels(factor(data[[variable]]))
+    res <- data %>%
+      dplyr::filter(!is.na(.data[[variable]])) %>%
+      dplyr::mutate(.lvl = factor(.data[[variable]], levels = lev)) %>%
+      dplyr::group_by(.lvl, .drop = FALSE) %>%
+      dplyr::summarise(
+        .share = mean(as.character(.data[[by]]) == level),
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(.lvl)
+    stats::setNames(data.frame(fmt(res$.share)), column)
+  }
+  fn_dich <- function(data, variable, by, ...) {
+    res <- data %>%
+      dplyr::filter(as.logical(.data[[variable]]) %in% TRUE) %>%
+      dplyr::summarise(.share = mean(as.character(.data[[by]]) == level))
+    stats::setNames(data.frame(fmt(res$.share)), column)
+  }
+  tbl <- gtsummary::add_stat(
+    tbl,
+    fns = list(
+      gtsummary::all_categorical(dichotomous = FALSE) ~ fn_cat,
+      gtsummary::all_dichotomous() ~ fn_dich
+    ),
+    location = list(
+      gtsummary::all_categorical(dichotomous = FALSE) ~ "level",
+      gtsummary::all_dichotomous() ~ "label"
+    )
+  )
+  hdr <- rlang::set_names(list(as.character(glue::glue(header))), column)
+  tbl <- do.call(gtsummary::modify_header, c(list(tbl), hdr))
+  if (!is.null(footnote)) {
+    tbl <- gtsummary::modify_footnote_header(
+      tbl,
+      footnote = as.character(glue::glue(footnote)),
+      columns = dplyr::all_of(column)
+    )
+  }
+  tbl
+}

@@ -934,6 +934,22 @@ flextable_subset_body_rows <- function(part, idx) {
 #'   * `"autofit"` — Word recomputes the column widths from content.
 #'   * `"fixed"` — fixed layout with the widths the `flextable` already
 #'     carries.
+#' @param footnotes Where the table's footer (the notes `gtsummary` and
+#'   `modelsummary` add: the statistics legend, the test names, the
+#'   significance stars) is written, one of:
+#'   * `"table"` (default) — left in the table, as footer rows spanning it.
+#'   * `"below"` — taken out of the table and written after it as plain
+#'     paragraphs, one per footer row, in the table's font and with no space
+#'     before or after (single line spacing), so they read as a compact block
+#'     of notes; superscript markers, bold and italic runs are kept. The table
+#'     itself then ends with its last body row.
+#' @param blank_line_after_caption Whether to leave one empty line between the
+#'   caption and the table (default `TRUE`; nothing is added when there is no
+#'   caption). The empty line is a paragraph in the table's font with no
+#'   paragraph spacing, so it is exactly one line high.
+#' @param blank_line_before_notes Whether to leave one empty line between the
+#'   table and its notes when these are written below the table
+#'   (`footnotes = "below"`; default `TRUE`). Same empty line as above.
 #' @param word_prop A named list of page/caption options forwarded to
 #'   [prepare_docx()] (caption text, paper format, margins, ...).
 #' @return Called for its side effect of writing `outfp`; returns the result of
@@ -952,12 +968,37 @@ flextable2docx <- function(
   padding.offset.left = -5,
   padding.offset.right = -5,
   layout = c("fit_first_column", "autofit", "fixed"),
+  footnotes = c("table", "below"),
+  blank_line_after_caption = TRUE,
+  blank_line_before_notes = TRUE,
   word_prop = list()
 ) {
   layout <- match.arg(layout)
+  footnotes <- match.arg(footnotes)
 
   # Initialize Word document
   outs <- do.call(prepare_docx, word_prop)
+
+  # One empty line in the table's font, with no paragraph spacing: the gap
+  # between the caption and the table, and between the table and its notes
+  blank_line <- officer::fpar(
+    officer::ftext(" ", officer::fp_text(font.family = font_name, font.size = font_size)),
+    fp_p = officer::fp_par(padding = 0, line_spacing = 1)
+  )
+  has_caption <- !is.null(word_prop[["caption_text"]]) && nzchar(word_prop[["caption_text"]])
+  if (isTRUE(blank_line_after_caption) && has_caption) {
+    outs[["docx"]] <- officer::body_add_fpar(outs[["docx"]], blank_line)
+  }
+
+  # Footer rows taken out of the table, to be written after it as paragraphs.
+  # Each footer row is one merged cell whose content is a data frame of runs
+  # (the superscript marker, then the note); collected before the footer is
+  # deleted, so the widths below are computed on the table that is written.
+  notes <- list()
+  if (identical(footnotes, "below") && flextable::nrow_part(tbl, "footer") > 0) {
+    notes <- flextable_footer_runs(tbl)
+    tbl <- flextable::delete_part(tbl, part = "footer")
+  }
 
   # Font and padding first: the column widths computed below depend on both
   tbl %<>%
@@ -1055,8 +1096,69 @@ flextable2docx <- function(
   outs[["docx"]] <- outs[["docx"]] %>%
     flextable::body_add_flextable(value = tbl, split = TRUE, keepnext = FALSE)
 
+  # The notes, one paragraph each, in the table's font, with no paragraph
+  # spacing and single line spacing so they form a compact block, after one
+  # empty line
+  if (isTRUE(blank_line_before_notes) && length(notes) > 0) {
+    outs[["docx"]] <- officer::body_add_fpar(outs[["docx"]], blank_line)
+  }
+  for (runs in notes) {
+    chunks <- lapply(seq_len(nrow(runs)), function(k) {
+      officer::ftext(
+        runs$txt[k],
+        officer::fp_text(
+          font.family = font_name,
+          font.size = font_size,
+          bold = isTRUE(runs$bold[k]),
+          italic = isTRUE(runs$italic[k]),
+          vertical.align = if (identical(runs$vertical.align[k], "superscript")) {
+            "superscript"
+          } else if (identical(runs$vertical.align[k], "subscript")) {
+            "subscript"
+          } else {
+            "baseline"
+          }
+        )
+      )
+    })
+    note_par <- do.call(
+      officer::fpar,
+      c(chunks, list(fp_p = officer::fp_par(text.align = "left", padding = 0, line_spacing = 1)))
+    )
+    outs[["docx"]] <- officer::body_add_fpar(outs[["docx"]], note_par)
+  }
+
   # Finalize and return
   return(finalize_docx(outs, outfp))
+}
+
+#' The runs of each footer row of a flextable
+#'
+#' Internal helper of [flextable2docx()]: for every row of the footer part,
+#' the formatted runs of its cells (a footer note is normally one cell merged
+#' across the table, so the first column carries it) as one data frame with
+#' the columns `txt`, `bold`, `italic` and `vertical.align`, empty runs
+#' dropped. Rows whose every run is empty are skipped.
+#'
+#' @param tbl A `flextable` with a footer part.
+#' @return A list of data frames, one per non-empty footer row, in order.
+#' @keywords internal
+flextable_footer_runs <- function(tbl) {
+  content <- tbl$footer$content$data
+  cols <- c("txt", "bold", "italic", "vertical.align")
+  out <- list()
+  for (i in seq_len(nrow(content))) {
+    runs <- do.call(rbind, lapply(seq_len(ncol(content)), function(j) {
+      cell <- content[i, j][[1]]
+      if (is.null(cell) || nrow(cell) == 0) return(NULL)
+      for (nm in setdiff(cols, names(cell))) cell[[nm]] <- NA
+      cell[, cols, drop = FALSE]
+    }))
+    if (is.null(runs)) next
+    runs <- runs[!is.na(runs$txt) & nzchar(runs$txt), , drop = FALSE]
+    if (nrow(runs) > 0) out[[length(out) + 1]] <- runs
+  }
+  out
 }
 
 #' How many equal-width columns fit on a page next to the first column
